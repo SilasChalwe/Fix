@@ -211,6 +211,12 @@ The application does not silently download dependencies at startup.
 9. Keep changes limited to the assigned workstream.
 10. Update documentation when a plugin contract changes.
 
+## Contributor Roadmap
+
+Contributor work is phase-gated. See [ROADMAP.md](ROADMAP.md) and roadmap issue #3 before starting work.
+
+Only the first incomplete milestone is active for implementation. Later milestones remain blocked until the previous gate is complete.
+
 ## Development Workstreams
 
 Contributors may work on:

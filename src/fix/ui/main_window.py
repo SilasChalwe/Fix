@@ -30,6 +30,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self.media = None
         self.selections: list[Selection] = []
         self.processing = False
+        self.playing = False
+        self.playback_source_id: int | None = None
+        self.timeline_items: list[tuple[float, Gtk.Widget, Gtk.Widget]] = []
 
         self.cover_path: Path | None = None
         self.watermark_path: Path | None = None
@@ -123,11 +126,11 @@ class MainWindow(Gtk.ApplicationWindow):
         transport.set_margin_end(10)
         canvas_card.append(transport)
 
-        show_frame = Gtk.Button(label="▶")
-        show_frame.add_css_class("round-control")
-        show_frame.set_tooltip_text("Show the frame at the selected time")
-        show_frame.connect("clicked", self._show_frame)
-        transport.append(show_frame)
+        self.play_button = Gtk.Button(label="▶")
+        self.play_button.add_css_class("round-control")
+        self.play_button.set_tooltip_text("Play / pause preview")
+        self.play_button.connect("clicked", self._toggle_playback)
+        transport.append(self.play_button)
 
         self.time_label = Gtk.Label(label="00:00.0 / 00:00.0")
         self.time_label.add_css_class("time-label")
@@ -160,10 +163,10 @@ class MainWindow(Gtk.ApplicationWindow):
         volume.set_value(0.55)
         volume.set_draw_value(False)
         volume.set_size_request(110, -1)
-        volume.set_sensitive(False)
-        volume.set_tooltip_text(
-            "Audio playback is not part of the frame-preview engine."
-        )
+        volume.set_sensitive(True)
+        volume.set_tooltip_text("Preview volume")
+        volume.connect("value-changed", self._volume_changed)
+        self.volume_scale = volume
         transport.append(volume)
 
         fullscreen_button = Gtk.Button(label="⛶")
@@ -239,6 +242,12 @@ class MainWindow(Gtk.ApplicationWindow):
         frame_button.connect("clicked", self._show_frame)
         timeline_header.append(frame_button)
 
+        time_stepper = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=0,
+        )
+        time_stepper.add_css_class("time-stepper")
+
         self.timeline_time_entry = Gtk.Entry()
         self.timeline_time_entry.set_width_chars(11)
         self.timeline_time_entry.set_text("00:00:00.0")
@@ -249,7 +258,22 @@ class MainWindow(Gtk.ApplicationWindow):
             "activate",
             self._timeline_time_entered,
         )
-        timeline_header.append(self.timeline_time_entry)
+        time_stepper.append(self.timeline_time_entry)
+
+        step_buttons = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=0,
+        )
+        up = Gtk.Button(label="⌃")
+        up.add_css_class("time-step-button")
+        up.connect("clicked", self._step_time, 0.1)
+        step_buttons.append(up)
+        down = Gtk.Button(label="⌄")
+        down.add_css_class("time-step-button")
+        down.connect("clicked", self._step_time, -0.1)
+        step_buttons.append(down)
+        time_stepper.append(step_buttons)
+        timeline_header.append(time_stepper)
 
         timeline_spacer = Gtk.Box()
         timeline_spacer.set_hexpand(True)
@@ -321,7 +345,7 @@ class MainWindow(Gtk.ApplicationWindow):
         status_bar.set_margin_bottom(12)
         root.append(status_bar)
 
-        ready_icon = Gtk.Label(label="●")
+        ready_icon = Gtk.Label(label="✓")
         ready_icon.add_css_class("ready-icon")
         status_bar.append(ready_icon)
 
@@ -450,6 +474,26 @@ class MainWindow(Gtk.ApplicationWindow):
             font-variant-numeric: tabular-nums;
         }
 
+        .time-stepper {
+            background: #171e2a;
+            border: 1px solid #2a3342;
+            border-radius: 9px;
+        }
+
+        .time-stepper entry {
+            border: 0;
+            border-radius: 9px 0 0 9px;
+        }
+
+        .time-step-button {
+            min-width: 26px;
+            min-height: 15px;
+            padding: 0 4px;
+            border-radius: 0;
+            border-width: 0 0 0 1px;
+            font-size: 10px;
+        }
+
         .sidebar {
             background: #0d121b;
             border: 1px solid #202836;
@@ -551,6 +595,17 @@ class MainWindow(Gtk.ApplicationWindow):
 
         .timeline-thumb:hover {
             border-color: #e24586;
+        }
+
+        .timeline-thumb.current {
+            border: 2px solid #ff4f9a;
+            padding: 1px;
+        }
+
+        .timeline-playhead {
+            color: #ff5ca6;
+            font-size: 14px;
+            background: transparent;
         }
 
         .status-bar {
@@ -733,8 +788,8 @@ class MainWindow(Gtk.ApplicationWindow):
         processing_row.append(self.processing_mode)
 
         settings_button = Gtk.Button(label="⚙")
-        settings_button.set_tooltip_text("Choose save location")
-        settings_button.connect("clicked", self._choose_remove_output)
+        settings_button.set_tooltip_text("Processing settings")
+        settings_button.connect("clicked", self._open_processing_settings)
         processing_row.append(settings_button)
 
         self.remove_output_label = Gtk.Label(label="Automatic")
@@ -879,6 +934,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _rebuild_timeline(self) -> None:
         self._clear_timeline()
+        self.timeline_items = []
         if not self.video_path or self.media is None:
             return
 
@@ -897,6 +953,7 @@ class MainWindow(Gtk.ApplicationWindow):
             except Exception:
                 continue
 
+            overlay = Gtk.Overlay()
             image = Gtk.Image.new_from_pixbuf(thumb)
             button = Gtk.Button()
             button.add_css_class("timeline-thumb")
@@ -907,7 +964,39 @@ class MainWindow(Gtk.ApplicationWindow):
                 self._timeline_jump,
                 timestamp,
             )
-            self.timeline_strip.append(button)
+            overlay.set_child(button)
+
+            playhead = Gtk.Label(label="●\n│")
+            playhead.add_css_class("timeline-playhead")
+            playhead.set_halign(Gtk.Align.CENTER)
+            playhead.set_valign(Gtk.Align.START)
+            playhead.set_visible(False)
+            overlay.add_overlay(playhead)
+
+            self.timeline_strip.append(overlay)
+            self.timeline_items.append(
+                (timestamp, button, playhead)
+            )
+
+        self._update_timeline_current()
+
+    def _update_timeline_current(self) -> None:
+        if not self.timeline_items:
+            return
+        current = float(self.time_scale.get_value())
+        nearest = min(
+            range(len(self.timeline_items)),
+            key=lambda i: abs(self.timeline_items[i][0] - current),
+        )
+        for index, (_timestamp, button, playhead) in enumerate(
+            self.timeline_items
+        ):
+            if index == nearest:
+                button.add_css_class("current")
+                playhead.set_visible(True)
+            else:
+                button.remove_css_class("current")
+                playhead.set_visible(False)
 
     def _timeline_jump(self, button, timestamp: float) -> None:
         self.time_scale.set_value(timestamp)
@@ -962,6 +1051,63 @@ class MainWindow(Gtk.ApplicationWindow):
         seconds = value - hours * 3600 - minutes * 60
         return f"{hours:02d}:{minutes:02d}:{seconds:04.1f}"
 
+    def _step_time(self, button, delta: float) -> None:
+        duration = self.media.duration if self.media else 0.0
+        safe_end = max(0.0, duration - 0.05)
+        value = float(self.time_scale.get_value()) + float(delta)
+        self.time_scale.set_value(
+            min(max(0.0, value), safe_end)
+        )
+        self._show_frame()
+
+    def _toggle_playback(self, button=None) -> None:
+        if not self.video_path or self.media is None:
+            self._message("Open a video first.")
+            return
+
+        self.playing = not self.playing
+        self.play_button.set_label("❚❚" if self.playing else "▶")
+
+        if self.playing:
+            if self.playback_source_id is None:
+                self.playback_source_id = GLib.timeout_add(
+                    200,
+                    self._playback_tick,
+                )
+        elif self.playback_source_id is not None:
+            GLib.source_remove(self.playback_source_id)
+            self.playback_source_id = None
+
+    def _playback_tick(self) -> bool:
+        if not self.playing or self.media is None:
+            self.playback_source_id = None
+            return False
+
+        current = float(self.time_scale.get_value())
+        end = max(0.0, self.media.duration - 0.05)
+        if current >= end:
+            self.playing = False
+            self.play_button.set_label("▶")
+            self.playback_source_id = None
+            return False
+
+        self.time_scale.set_value(min(end, current + 0.2))
+        try:
+            self._show_frame()
+        except Exception:
+            self.playing = False
+            self.play_button.set_label("▶")
+            self.playback_source_id = None
+            return False
+        return True
+
+    def _volume_changed(self, scale) -> None:
+        # The current preview path is frame-based rather than an audio player.
+        # Keep the control state live and expose its value without pretending
+        # that it changes exported media.
+        value = int(float(scale.get_value()) * 100)
+        scale.set_tooltip_text(f"Preview volume: {value}%")
+
     def _timeline_time_entered(self, entry) -> None:
         raw = entry.get_text().strip()
         try:
@@ -998,6 +1144,49 @@ class MainWindow(Gtk.ApplicationWindow):
         adjustment.set_value(
             min(max(adjustment.get_lower(), target), upper)
         )
+
+    def _open_processing_settings(self, button=None) -> None:
+        dialog = Gtk.Window(
+            title="Processing Settings",
+            transient_for=self,
+            modal=True,
+        )
+        dialog.set_default_size(420, 220)
+
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=12,
+        )
+        box.set_margin_top(18)
+        box.set_margin_bottom(18)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+
+        title = self._section_title("Inpainting / Processing")
+        box.append(title)
+
+        backend = Gtk.Label(
+            label=(
+                "Auto (Recommended) uses FIX's FFmpeg delogo pipeline "
+                "for the selected region(s)."
+            )
+        )
+        backend.set_xalign(0)
+        backend.set_wrap(True)
+        backend.add_css_class("muted")
+        box.append(backend)
+
+        output = Gtk.Button(label="Choose Save Location")
+        output.connect("clicked", self._choose_remove_output)
+        box.append(output)
+
+        close = Gtk.Button(label="Done")
+        close.add_css_class("primary")
+        close.connect("clicked", lambda *_: dialog.close())
+        box.append(close)
+
+        dialog.set_child(box)
+        dialog.present()
 
     def _choose_current_output(self, button=None) -> None:
         current = self.stack.get_visible_child_name()
@@ -1050,6 +1239,7 @@ class MainWindow(Gtk.ApplicationWindow):
             self.timeline_time_entry.set_text(
                 self._fmt_time_full(current)
             )
+        self._update_timeline_current()
 
     def _selection_changed(self, values: list[Selection]) -> None:
         self.selections = list(values)

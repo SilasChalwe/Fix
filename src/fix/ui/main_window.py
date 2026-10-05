@@ -862,6 +862,123 @@ class MainWindow(Gtk.ApplicationWindow):
         self.time_scale.set_value(timestamp)
         self._show_frame()
 
+    def _remove_last_selection(self, button=None) -> None:
+        if not self.selections:
+            return
+        values = list(self.selections[:-1])
+        self.canvas.set_selections(values)
+        self._selection_changed(values)
+
+    def _update_selection_preview(self) -> None:
+        if not hasattr(self, "selection_preview"):
+            return
+        if not self.selections or self.canvas.frame_pixbuf is None:
+            self.selection_preview.clear()
+            return
+
+        selection = self.selections[-1]
+        pixbuf = self.canvas.frame_pixbuf
+        width = pixbuf.get_width()
+        height = pixbuf.get_height()
+
+        x = max(0, min(selection.x, width - 1))
+        y = max(0, min(selection.y, height - 1))
+        w = max(1, min(selection.width, width - x))
+        h = max(1, min(selection.height, height - y))
+
+        try:
+            crop = pixbuf.new_subpixbuf(x, y, w, h)
+            thumb = crop.scale_simple(
+                120,
+                68,
+                GdkPixbuf.InterpType.BILINEAR,
+            )
+            self.selection_preview.set_from_pixbuf(thumb)
+        except Exception:
+            self.selection_preview.clear()
+
+    def _toggle_fullscreen(self, button=None) -> None:
+        if self.is_fullscreen():
+            self.unfullscreen()
+        else:
+            self.fullscreen()
+
+    @staticmethod
+    def _fmt_time_full(value: float) -> str:
+        value = max(0.0, float(value))
+        hours = int(value // 3600)
+        minutes = int((value % 3600) // 60)
+        seconds = value - hours * 3600 - minutes * 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:04.1f}"
+
+    def _timeline_time_entered(self, entry) -> None:
+        raw = entry.get_text().strip()
+        try:
+            parts = raw.split(":")
+            if len(parts) == 3:
+                hours, minutes, seconds = parts
+                value = (
+                    float(hours) * 3600
+                    + float(minutes) * 60
+                    + float(seconds)
+                )
+            elif len(parts) == 2:
+                minutes, seconds = parts
+                value = float(minutes) * 60 + float(seconds)
+            else:
+                value = float(raw)
+        except ValueError:
+            self._message("Time must be HH:MM:SS.s, MM:SS.s, or seconds.")
+            return
+
+        duration = self.media.duration if self.media else 0.0
+        safe_end = max(0.0, duration - 0.05)
+        self.time_scale.set_value(min(max(0.0, value), safe_end))
+        self._show_frame()
+
+    def _scroll_timeline(self, button, direction: int) -> None:
+        adjustment = self.timeline_scroll.get_hadjustment()
+        step = max(120.0, adjustment.get_page_size() * 0.75)
+        upper = max(
+            adjustment.get_lower(),
+            adjustment.get_upper() - adjustment.get_page_size(),
+        )
+        target = adjustment.get_value() + direction * step
+        adjustment.set_value(
+            min(max(adjustment.get_lower(), target), upper)
+        )
+
+    def _choose_current_output(self, button=None) -> None:
+        current = self.stack.get_visible_child_name()
+        if current == "remove":
+            self._choose_remove_output(button)
+        elif current == "cover":
+            self._choose_cover_output(button)
+        else:
+            self._message(
+                "Replace Watermark updates the current source video in place."
+            )
+
+    def _run_current_operation(self, button=None) -> None:
+        current = self.stack.get_visible_child_name()
+        if current == "remove":
+            self._start_remove(button)
+        elif current == "cover":
+            self._start_cover(button)
+        else:
+            self._start_overlay(button)
+
+    def _current_settings(self, button=None) -> None:
+        current = self.stack.get_visible_child_name()
+        if current == "remove":
+            self._choose_remove_output(button)
+        elif current == "cover":
+            self._choose_cover_output(button)
+        else:
+            self._message(
+                "Use the Replace Watermark panel to set image and duration."
+            )
+
     def _message(self, text: str) -> None:
         self.status.set_text(text)
 
@@ -878,6 +995,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self.time_label.set_text(
             f"{self._fmt_time(current)} / {self._fmt_time(duration)}"
         )
+        if hasattr(self, "timeline_time_entry"):
+            self.timeline_time_entry.set_text(
+                self._fmt_time_full(current)
+            )
 
     def _selection_changed(self, values: list[Selection]) -> None:
         self.selections = list(values)
@@ -892,15 +1013,29 @@ class MainWindow(Gtk.ApplicationWindow):
                 f"X: {last.x}   Y: {last.y}   "
                 f"W: {last.width}   H: {last.height}"
             )
+            self._update_selection_preview()
+            media_text = (
+                f" | Video: {self.media.width}×{self.media.height}"
+                f" | Duration: {self._fmt_time(self.media.duration)}"
+                if self.media else ""
+            )
             self.status.set_text(
-                f"●  Ready — {len(values)} selection(s)"
+                f"Ready — {len(values)} selection(s){media_text}"
             )
         else:
             self.selection_summary.set_text("No selections yet")
             self.selection_coords.set_text(
                 "Draw directly on the video preview."
             )
-            self.status.set_text("●  Ready — no selections")
+            self._update_selection_preview()
+            media_text = (
+                f" | Video: {self.media.width}×{self.media.height}"
+                f" | Duration: {self._fmt_time(self.media.duration)}"
+                if self.media else ""
+            )
+            self.status.set_text(
+                f"Ready — no selections{media_text}"
+            )
 
     def _clear_selections(self, button=None) -> None:
         self.canvas.set_selections([])
@@ -970,7 +1105,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self._show_frame()
         self._rebuild_timeline()
         self.status.set_text(
-            f"●  Ready — {path.name}"
+            f"Ready | Video: {self.media.width}×{self.media.height}"
+            f" | Duration: {self._fmt_time(self.media.duration)}"
         )
 
     @staticmethod

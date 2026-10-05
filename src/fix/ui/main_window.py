@@ -7,7 +7,7 @@ import cv2
 import gi
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango
 
 from fix.core.executor import OperationExecutor
 from fix.core.models import OperationContext, Selection
@@ -69,7 +69,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.video_name = Gtk.Label(label="No video selected")
         self.video_name.set_xalign(0)
         self.video_name.set_hexpand(True)
-        self.video_name.set_ellipsize(3)
+        self.video_name.set_ellipsize(Pango.EllipsizeMode.END)
         self.video_name.add_css_class("file-name")
         source_bar.append(self.video_name)
 
@@ -756,18 +756,28 @@ class MainWindow(Gtk.ApplicationWindow):
         self.selections = list(values)
         if values:
             last = values[-1]
+            self.selection_summary.set_text(
+                f"Selection {len(values)}"
+                if len(values) == 1
+                else f"{len(values)} selections"
+            )
+            self.selection_coords.set_text(
+                f"X: {last.x}   Y: {last.y}   "
+                f"W: {last.width}   H: {last.height}"
+            )
             self.status.set_text(
-                f"{len(values)} selection(s). "
-                f"Last: x={last.x}, y={last.y}, "
-                f"w={last.width}, h={last.height}"
+                f"●  Ready — {len(values)} selection(s)"
             )
         else:
-            self.status.set_text("No selections.")
+            self.selection_summary.set_text("No selections yet")
+            self.selection_coords.set_text(
+                "Draw directly on the video preview."
+            )
+            self.status.set_text("●  Ready — no selections")
 
     def _clear_selections(self, button=None) -> None:
-        self.selections = []
         self.canvas.set_selections([])
-        self.status.set_text("Selections cleared.")
+        self._selection_changed([])
 
     def _tab_changed(self, stack, _param) -> None:
         self.canvas.set_preview_visible(
@@ -814,6 +824,16 @@ class MainWindow(Gtk.ApplicationWindow):
         self.time_scale.set_range(0.0, max(self.media.duration, 0.1))
         self.time_scale.set_value(0.0)
 
+        media_type = path.suffix.lstrip(".").upper() or "VIDEO"
+        self.media_badge.set_text(
+            f"{self.media.width} × {self.media.height}   |   "
+            f"{self._fmt_time(self.media.duration)}   |   {media_type}"
+        )
+        self.status_meta.set_text(
+            f"Video: {self.media.width}×{self.media.height}   |   "
+            f"Duration: {self._fmt_time(self.media.duration)}"
+        )
+
         self.remove_output = None
         self.cover_output = None
         self.remove_output_label.set_text("Automatic")
@@ -821,11 +841,9 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self._clear_selections()
         self._show_frame()
+        self._rebuild_timeline()
         self.status.set_text(
-            f"Loaded {path.name} — "
-            f"{self.media.width}×{self.media.height}, "
-            f"{self.media.video_codec}, "
-            f"{self.media.duration:.1f}s"
+            f"●  Ready — {path.name}"
         )
 
     def _show_frame(self, button=None) -> None:

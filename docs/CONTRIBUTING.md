@@ -8,21 +8,41 @@ Thank you for contributing to FIX! Please follow these guidelines to ensure your
 - **Claiming an Issue:** Comment on the issue before starting so maintainers and other contributors can see it is actively being worked on. Wait for assignment or acknowledgement if required.
 - **Scope:** Keep one pull request focused on one issue unless dependencies or tight couplings require otherwise.
 
-## 2. Architectural Guidelines
+## 2. Platform Contribution Policy
+
+FIX is one shared codebase. Linux is the currently verified desktop runtime, but Windows and macOS developers are welcome contributors now.
+
+During milestones where Windows/macOS runtime work is not yet active, contributors on those systems may work on platform-neutral areas such as:
+
+- `src/fix/core/`
+- `src/fix/media/`
+- `src/fix/plugins/`
+- tests and validation
+- FFmpeg/FFprobe behavior
+- codec/metadata compatibility
+- documentation
+
+See [`docs/PLATFORM_SUPPORT.md`](PLATFORM_SUPPORT.md) and issue #16.
+
+Do not create a Windows plugin, macOS plugin, duplicate FFmpeg engine, or separate platform copy of FIX. Full Windows/macOS desktop runtime and packaging work is planned for M5 (#8).
+
+## 3. Architectural Guidelines
 
 To maintain consistency and prevent architectural drift, adhere strictly to the rules outlined in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md):
 
 - **Plugins by Default:** New media operations and filters must be implemented as plugins (`src/fix/plugins/`), not hardcoded into core layers.
 - **Media Layering:** Shared FFmpeg/FFprobe logic and wrappers must stay within the core media layer (`src/fix/media/`).
 - **Selection State:** Do not create a second selection-state system; extend or utilize existing models and core registries.
+- **Platform Boundaries:** Keep OS-specific logic at the launch/setup/packaging/platform-integration boundary where practical.
 - **Private Data:** Do not commit client or private media files under any circumstances. Use synthetic fixtures or sample assets under `tests/fixtures/`.
 
-## 3. Testing & Validation
+## 4. Testing & Validation
 
 - **Add Tests:** Always add unit or integration tests for any changed or new behavior (`tests/`).
-- **Contributor Reports:** Local test reports and reproduction steps are extremely helpful in PR descriptions, but maintainer and CI validation (`.github/workflows/tests.yml`) are still strictly required before merge.
+- **Contributor Reports:** Local test reports and reproduction steps are extremely helpful in PR descriptions, but maintainer and CI validation are still required before merge.
+- **Platform Claims:** Do not claim full Windows/macOS support based only on platform-neutral tests. Full desktop support requires runtime and media validation for that OS.
 
-## 4. Submitting Your Pull Request
+## 5. Submitting Your Pull Request
 
 - **Reference Issues:** Reference the issue you are fixing in your pull request description (e.g., `Closes #14` or `Fixes #14`).
 - **Review:** Ensure your changes do not introduce new lint or test failures.

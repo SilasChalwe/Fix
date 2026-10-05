@@ -7,7 +7,7 @@ import cv2
 import gi
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gtk, GdkPixbuf, GLib
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 from fix.core.executor import OperationExecutor
 from fix.core.models import OperationContext, Selection
@@ -20,7 +20,8 @@ class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, application):
         super().__init__(application=application)
         self.set_title("FIX — Watermark & Video Asset Toolkit")
-        self.set_default_size(1100, 820)
+        self.set_default_size(1400, 860)
+        self._install_css()
 
         self.registry = build_registry()
         self.executor = OperationExecutor()
@@ -35,30 +36,99 @@ class MainWindow(Gtk.ApplicationWindow):
         self.remove_output: Path | None = None
         self.cover_output: Path | None = None
 
+        header = Gtk.HeaderBar()
+        header.add_css_class("app-header")
+        title = Gtk.Label(label="🎬  FIX — Watermark & Video Asset Toolkit")
+        title.add_css_class("app-title")
+        header.set_title_widget(title)
+        self.set_titlebar(header)
+
         root = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
-            spacing=10,
+            spacing=0,
         )
-        root.set_margin_top(12)
-        root.set_margin_bottom(12)
-        root.set_margin_start(12)
-        root.set_margin_end(12)
+        root.add_css_class("app-root")
         self.set_child(root)
 
-        source_row = Gtk.Box(
+        source_bar = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=8,
+            spacing=14,
         )
-        root.append(source_row)
+        source_bar.add_css_class("source-bar")
+        source_bar.set_margin_top(14)
+        source_bar.set_margin_bottom(14)
+        source_bar.set_margin_start(18)
+        source_bar.set_margin_end(18)
+        root.append(source_bar)
 
-        open_button = Gtk.Button(label="Open Video")
+        open_button = Gtk.Button(label="▱  Open Video")
+        open_button.add_css_class("primary")
         open_button.connect("clicked", self._open_video)
-        source_row.append(open_button)
+        source_bar.append(open_button)
 
         self.video_name = Gtk.Label(label="No video selected")
         self.video_name.set_xalign(0)
         self.video_name.set_hexpand(True)
-        source_row.append(self.video_name)
+        self.video_name.set_ellipsize(3)
+        self.video_name.add_css_class("file-name")
+        source_bar.append(self.video_name)
+
+        self.media_badge = Gtk.Label(label="No media")
+        self.media_badge.add_css_class("media-badge")
+        source_bar.append(self.media_badge)
+
+        workspace = Gtk.Paned(
+            orientation=Gtk.Orientation.HORIZONTAL,
+        )
+        workspace.set_vexpand(True)
+        workspace.set_position(860)
+        workspace.set_resize_start_child(True)
+        workspace.set_shrink_start_child(True)
+        workspace.set_resize_end_child(False)
+        workspace.set_shrink_end_child(True)
+        root.append(workspace)
+
+        left = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=12,
+        )
+        left.set_margin_start(18)
+        left.set_margin_end(10)
+        left.set_margin_top(10)
+        left.set_margin_bottom(10)
+
+        canvas_card = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=0,
+        )
+        canvas_card.add_css_class("video-card")
+        canvas_card.set_vexpand(True)
+        left.append(canvas_card)
+
+        self.canvas = VideoCanvas(self._selection_changed)
+        self.canvas.set_vexpand(True)
+        canvas_card.append(self.canvas)
+
+        transport = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=10,
+        )
+        transport.add_css_class("transport")
+        transport.set_margin_top(8)
+        transport.set_margin_bottom(8)
+        transport.set_margin_start(10)
+        transport.set_margin_end(10)
+        canvas_card.append(transport)
+
+        show_frame = Gtk.Button(label="▶")
+        show_frame.add_css_class("round-control")
+        show_frame.set_tooltip_text("Show the frame at the selected time")
+        show_frame.connect("clicked", self._show_frame)
+        transport.append(show_frame)
+
+        self.time_label = Gtk.Label(label="00:00.0 / 00:00.0")
+        self.time_label.add_css_class("time-label")
+        transport.append(self.time_label)
 
         self.time_scale = Gtk.Scale.new_with_range(
             Gtk.Orientation.HORIZONTAL,
@@ -68,29 +138,24 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         self.time_scale.set_hexpand(True)
         self.time_scale.set_draw_value(False)
-        root.append(self.time_scale)
-
-        time_row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=8,
-        )
-        root.append(time_row)
-
-        show_frame = Gtk.Button(label="Show Frame")
-        show_frame.connect("clicked", self._show_frame)
-        time_row.append(show_frame)
-
-        self.time_label = Gtk.Label(label="00:00.0 / 00:00.0")
-        time_row.append(self.time_label)
-
         self.time_scale.connect(
             "value-changed",
             self._time_changed,
         )
+        transport.append(self.time_scale)
 
-        self.canvas = VideoCanvas(self._selection_changed)
-        self.canvas.set_vexpand(True)
-        root.append(self.canvas)
+        workspace.set_start_child(left)
+
+        sidebar = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=0,
+        )
+        sidebar.set_size_request(420, -1)
+        sidebar.add_css_class("sidebar")
+        sidebar.set_margin_start(6)
+        sidebar.set_margin_end(18)
+        sidebar.set_margin_top(10)
+        sidebar.set_margin_bottom(10)
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(
@@ -103,165 +168,486 @@ class MainWindow(Gtk.ApplicationWindow):
 
         switcher = Gtk.StackSwitcher()
         switcher.set_stack(self.stack)
-        root.append(switcher)
+        switcher.set_hexpand(True)
+        switcher.add_css_class("operation-tabs")
+        sidebar.append(switcher)
 
         controls_scroll = Gtk.ScrolledWindow()
         controls_scroll.set_policy(
             Gtk.PolicyType.NEVER,
             Gtk.PolicyType.AUTOMATIC,
         )
-        controls_scroll.set_propagate_natural_height(True)
-        controls_scroll.set_max_content_height(240)
+        controls_scroll.set_vexpand(True)
         controls_scroll.set_child(self.stack)
-        root.append(controls_scroll)
+        sidebar.append(controls_scroll)
 
         self._build_remove_tab()
         self._build_cover_tab()
         self._build_overlay_tab()
+        workspace.set_end_child(sidebar)
 
-        status_row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=10,
-        )
-        root.append(status_row)
-
-        self.progress = Gtk.ProgressBar()
-        self.progress.set_hexpand(True)
-        status_row.append(self.progress)
-
-        self.status = Gtk.Label(label="Ready.")
-        self.status.set_xalign(0)
-        self.status.set_hexpand(True)
-        root.append(self.status)
-
-    def _build_remove_tab(self):
-        box = Gtk.Box(
+        timeline = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
             spacing=8,
         )
+        timeline.add_css_class("timeline-card")
+        timeline.set_margin_start(18)
+        timeline.set_margin_end(18)
+        timeline.set_margin_top(4)
+        timeline.set_margin_bottom(10)
+        root.append(timeline)
+
+        timeline_header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=10,
+        )
+        timeline.append(timeline_header)
+
+        timeline_title = Gtk.Label(label="◷  Timeline")
+        timeline_title.set_xalign(0)
+        timeline_title.set_hexpand(True)
+        timeline_title.add_css_class("section-title")
+        timeline_header.append(timeline_title)
+
+        frame_button = Gtk.Button(label="Show Frame")
+        frame_button.connect("clicked", self._show_frame)
+        timeline_header.append(frame_button)
+
+        timeline_scroll = Gtk.ScrolledWindow()
+        timeline_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC,
+            Gtk.PolicyType.NEVER,
+        )
+        timeline_scroll.set_min_content_height(82)
+        timeline.append(timeline_scroll)
+
+        self.timeline_strip = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=6,
+        )
+        self.timeline_strip.set_margin_top(2)
+        self.timeline_strip.set_margin_bottom(2)
+        self.timeline_strip.set_margin_start(2)
+        self.timeline_strip.set_margin_end(2)
+        timeline_scroll.set_child(self.timeline_strip)
+
+        placeholder = Gtk.Label(
+            label="Open a video to build the timeline preview"
+        )
+        placeholder.add_css_class("muted")
+        placeholder.set_margin_start(12)
+        placeholder.set_margin_top(24)
+        self.timeline_strip.append(placeholder)
+
+        self.progress = Gtk.ProgressBar()
+        self.progress.add_css_class("progress-line")
+        root.append(self.progress)
+
+        status_bar = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12,
+        )
+        status_bar.add_css_class("status-bar")
+        status_bar.set_margin_start(18)
+        status_bar.set_margin_end(18)
+        status_bar.set_margin_top(10)
+        status_bar.set_margin_bottom(12)
+        root.append(status_bar)
+
+        self.status = Gtk.Label(label="●  Ready.")
+        self.status.set_xalign(0)
+        self.status.set_hexpand(True)
+        self.status.add_css_class("status-text")
+        status_bar.append(self.status)
+
+        self.status_meta = Gtk.Label(label="No video loaded")
+        self.status_meta.add_css_class("muted")
+        status_bar.append(self.status_meta)
+
+    def _install_css(self) -> None:
+        css = b"""
+        window, .app-root {
+            background: #0b0f17;
+            color: #f4f6fb;
+        }
+
+        headerbar.app-header {
+            background: #111620;
+            color: #f8f8fb;
+            border-bottom: 1px solid #262d39;
+            min-height: 54px;
+        }
+
+        .app-title {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .source-bar {
+            background: #0f141e;
+            border-bottom: 1px solid #202735;
+        }
+
+        .file-name {
+            color: #edf0f5;
+            font-size: 14px;
+        }
+
+        .media-badge {
+            background: #151b27;
+            color: #dce1eb;
+            border: 1px solid #262f3e;
+            border-radius: 12px;
+            padding: 10px 14px;
+        }
+
+        button {
+            color: #f7f7fb;
+            background: #171e2a;
+            border: 1px solid #2a3342;
+            border-radius: 10px;
+            padding: 9px 13px;
+        }
+
+        button:hover {
+            background: #202938;
+        }
+
+        button.primary {
+            color: white;
+            font-weight: bold;
+            background-image: linear-gradient(to right, #8c164f, #b11e69);
+            border-color: #b11e69;
+        }
+
+        button.primary:hover {
+            background-image: linear-gradient(to right, #a31b5c, #c52777);
+        }
+
+        button.danger-soft {
+            background: #161b26;
+            color: #ff6da7;
+        }
+
+        .video-card, .card, .timeline-card {
+            background: #101620;
+            border: 1px solid #222b39;
+            border-radius: 16px;
+        }
+
+        .video-card {
+            padding: 0;
+        }
+
+        .transport {
+            background: #0e141e;
+            border-top: 1px solid #222b39;
+        }
+
+        .round-control {
+            border-radius: 999px;
+            min-width: 36px;
+            min-height: 36px;
+            padding: 4px;
+        }
+
+        .time-label {
+            color: #eef1f6;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sidebar {
+            background: #0d121b;
+            border: 1px solid #202836;
+            border-radius: 16px;
+        }
+
+        .operation-tabs {
+            background: #101620;
+            border-bottom: 1px solid #252e3c;
+            padding: 6px;
+        }
+
+        .operation-tabs button {
+            border: 0;
+            border-radius: 9px;
+            background: transparent;
+            padding: 10px 12px;
+        }
+
+        .operation-tabs button:checked {
+            background-image: linear-gradient(to right, #7f174a, #a41b60);
+            color: white;
+        }
+
+        .card {
+            padding: 14px;
+        }
+
+        .section-title {
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .muted {
+            color: #9ca5b4;
+        }
+
+        .selection-chip {
+            background-image: linear-gradient(to right, #6d173f, #54152f);
+            border: 1px solid #87204f;
+            border-radius: 13px;
+            padding: 12px;
+        }
+
+        .timeline-card {
+            padding: 12px;
+        }
+
+        .timeline-thumb {
+            background: #111823;
+            border: 1px solid #2a3444;
+            border-radius: 9px;
+            padding: 2px;
+        }
+
+        .timeline-thumb:hover {
+            border-color: #e24586;
+        }
+
+        .status-bar {
+            background: #0f141e;
+        }
+
+        .status-text {
+            color: #dce5ef;
+        }
+
+        .progress-line trough {
+            min-height: 3px;
+            background: #171e2a;
+        }
+
+        .progress-line progress {
+            background-image: linear-gradient(to right, #8c164f, #d13a82);
+        }
+
+        scale trough {
+            background: #343d4e;
+            min-height: 5px;
+            border-radius: 999px;
+        }
+
+        scale highlight {
+            background: #a71f61;
+            border-radius: 999px;
+        }
+
+        scale slider {
+            background: #ffffff;
+            border: 2px solid #b5276b;
+            min-width: 13px;
+            min-height: 13px;
+            border-radius: 999px;
+        }
+
+        spinbutton, dropdown {
+            background: #171e2a;
+            color: #f6f7fb;
+            border: 1px solid #2a3342;
+            border-radius: 9px;
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        display = Gdk.Display.get_default()
+        if display is not None:
+            Gtk.StyleContext.add_provider_for_display(
+                display,
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+            )
+
+    @staticmethod
+    def _card() -> Gtk.Box:
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=10,
+        )
+        box.add_css_class("card")
         box.set_margin_top(10)
+        box.set_margin_bottom(4)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        return box
 
-        box.append(Gtk.Label(
-            label=(
-                "Draw one or more selections on the video. "
-                "The same selections are shared across all operations."
-            ),
-            xalign=0,
-        ))
+    @staticmethod
+    def _section_title(text: str) -> Gtk.Label:
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.add_css_class("section-title")
+        return label
 
-        row = Gtk.Box(
+    def _build_remove_tab(self):
+        page = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=6,
+        )
+
+        selections = self._card()
+        header = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
             spacing=8,
         )
-        box.append(row)
+        title = self._section_title("▱  Selections")
+        title.set_hexpand(True)
+        header.append(title)
 
+        clear_button = Gtk.Button(label="Clear All")
+        clear_button.add_css_class("danger-soft")
+        clear_button.connect("clicked", self._clear_selections)
+        header.append(clear_button)
+        selections.append(header)
+
+        help_text = Gtk.Label(
+            label="Draw one or more areas on the video to remove watermarks."
+        )
+        help_text.set_xalign(0)
+        help_text.set_wrap(True)
+        help_text.add_css_class("muted")
+        selections.append(help_text)
+
+        selection_chip = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=3,
+        )
+        selection_chip.add_css_class("selection-chip")
+        selections.append(selection_chip)
+
+        self.selection_summary = Gtk.Label(label="No selections yet")
+        self.selection_summary.set_xalign(0)
+        self.selection_summary.add_css_class("section-title")
+        selection_chip.append(self.selection_summary)
+
+        self.selection_coords = Gtk.Label(
+            label="Draw directly on the video preview."
+        )
+        self.selection_coords.set_xalign(0)
+        self.selection_coords.add_css_class("muted")
+        selection_chip.append(self.selection_coords)
+
+        output = self._card()
+        output.append(self._section_title("Output"))
         choose = Gtk.Button(label="Choose Save Location")
         choose.connect("clicked", self._choose_remove_output)
-        row.append(choose)
+        output.append(choose)
 
         self.remove_output_label = Gtk.Label(label="Automatic")
         self.remove_output_label.set_xalign(0)
-        self.remove_output_label.set_hexpand(True)
-        row.append(self.remove_output_label)
+        self.remove_output_label.set_wrap(True)
+        self.remove_output_label.add_css_class("muted")
+        output.append(self.remove_output_label)
 
-        clear_button = Gtk.Button(label="Clear Selections")
-        clear_button.connect("clicked", self._clear_selections)
-        box.append(clear_button)
-
-        action = Gtk.Button(label="Remove Watermark")
+        action = Gtk.Button(label="▶  Remove Watermark")
+        action.add_css_class("primary")
         action.connect("clicked", self._start_remove)
-        box.append(action)
+        output.append(action)
+
+        page.append(selections)
+        page.append(output)
 
         self.stack.add_titled(
-            box,
+            page,
             "remove",
             "Remove Watermark",
         )
 
     def _build_cover_tab(self):
-        box = Gtk.Box(
+        page = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
-            spacing=8,
+            spacing=6,
         )
-        box.set_margin_top(10)
 
-        row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=8,
-        )
-        box.append(row)
+        asset = self._card()
+        asset.append(self._section_title("Thumbnail / Cover"))
 
         choose = Gtk.Button(label="Choose Cover Image")
         choose.connect("clicked", self._choose_cover)
-        row.append(choose)
+        asset.append(choose)
 
         self.cover_label = Gtk.Label(label="No cover selected")
         self.cover_label.set_xalign(0)
-        self.cover_label.set_hexpand(True)
-        row.append(self.cover_label)
+        self.cover_label.set_wrap(True)
+        self.cover_label.add_css_class("muted")
+        asset.append(self.cover_label)
 
-        output_row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=8,
-        )
-        box.append(output_row)
+        output = self._card()
+        output.append(self._section_title("Output"))
 
         output_button = Gtk.Button(label="Choose Save Location")
         output_button.connect("clicked", self._choose_cover_output)
-        output_row.append(output_button)
+        output.append(output_button)
 
         self.cover_output_label = Gtk.Label(label="Automatic")
         self.cover_output_label.set_xalign(0)
-        self.cover_output_label.set_hexpand(True)
-        output_row.append(self.cover_output_label)
+        self.cover_output_label.set_wrap(True)
+        self.cover_output_label.add_css_class("muted")
+        output.append(self.cover_output_label)
 
-        action = Gtk.Button(label="Replace Thumbnail / Cover")
+        action = Gtk.Button(label="▶  Replace Thumbnail / Cover")
+        action.add_css_class("primary")
         action.connect("clicked", self._start_cover)
-        box.append(action)
+        output.append(action)
+
+        page.append(asset)
+        page.append(output)
 
         self.stack.add_titled(
-            box,
+            page,
             "cover",
             "Thumbnail / Cover",
         )
 
     def _build_overlay_tab(self):
-        box = Gtk.Box(
+        page = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
-            spacing=8,
+            spacing=6,
         )
-        box.set_margin_top(10)
 
-        box.append(Gtk.Label(
+        asset = self._card()
+        asset.append(self._section_title("Replace Watermark"))
+
+        help_text = Gtk.Label(
             label=(
-                "The current selection is reused. "
-                "Choosing an image does not create another rectangle."
-            ),
-            xalign=0,
-        ))
-
-        row = Gtk.Box(
-            orientation=Gtk.Orientation.HORIZONTAL,
-            spacing=8,
+                "The current selection is reused. Choosing an image "
+                "does not create another rectangle."
+            )
         )
-        box.append(row)
+        help_text.set_xalign(0)
+        help_text.set_wrap(True)
+        help_text.add_css_class("muted")
+        asset.append(help_text)
 
         choose = Gtk.Button(label="Choose Watermark Image")
         choose.connect("clicked", self._choose_watermark)
-        row.append(choose)
+        asset.append(choose)
 
         self.watermark_label = Gtk.Label(label="No watermark selected")
         self.watermark_label.set_xalign(0)
-        self.watermark_label.set_hexpand(True)
-        row.append(self.watermark_label)
+        self.watermark_label.set_wrap(True)
+        self.watermark_label.add_css_class("muted")
+        asset.append(self.watermark_label)
 
         duration_row = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
             spacing=8,
         )
-        box.append(duration_row)
+        duration_label = Gtk.Label(label="Watermark duration")
+        duration_label.set_hexpand(True)
+        duration_label.set_xalign(0)
+        duration_row.append(duration_label)
 
-        duration_row.append(Gtk.Label(label="Watermark duration"))
         self.watermark_duration = Gtk.SpinButton.new_with_range(
             0.1,
             3600.0,
@@ -271,16 +657,83 @@ class MainWindow(Gtk.ApplicationWindow):
         self.watermark_duration.set_digits(1)
         duration_row.append(self.watermark_duration)
         duration_row.append(Gtk.Label(label="seconds"))
+        asset.append(duration_row)
 
-        action = Gtk.Button(label="Add / Replace Watermark")
+        action = Gtk.Button(label="▶  Add / Replace Watermark")
+        action.add_css_class("primary")
         action.connect("clicked", self._start_overlay)
-        box.append(action)
+        asset.append(action)
+
+        page.append(asset)
 
         self.stack.add_titled(
-            box,
+            page,
             "overlay",
             "Replace Watermark",
         )
+
+    def _clear_timeline(self) -> None:
+        child = self.timeline_strip.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            self.timeline_strip.remove(child)
+            child = next_child
+
+    def _rebuild_timeline(self) -> None:
+        self._clear_timeline()
+        if not self.video_path or self.media is None:
+            return
+
+        cap = cv2.VideoCapture(str(self.video_path))
+        duration = max(float(self.media.duration), 0.1)
+        sample_count = 9
+
+        try:
+            for index in range(sample_count):
+                timestamp = duration * index / max(sample_count - 1, 1)
+                cap.set(
+                    cv2.CAP_PROP_POS_MSEC,
+                    timestamp * 1000.0,
+                )
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    continue
+
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                height, width = rgb.shape[:2]
+                data = GLib.Bytes.new(rgb.tobytes())
+                pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
+                    data,
+                    GdkPixbuf.Colorspace.RGB,
+                    False,
+                    8,
+                    width,
+                    height,
+                    width * 3,
+                )
+                thumb = pixbuf.scale_simple(
+                    132,
+                    74,
+                    GdkPixbuf.InterpType.BILINEAR,
+                )
+
+                image = Gtk.Image.new_from_pixbuf(thumb)
+                button = Gtk.Button()
+                button.add_css_class("timeline-thumb")
+                button.set_child(image)
+                button.set_tooltip_text(self._fmt_time(timestamp))
+                button.connect(
+                    "clicked",
+                    self._timeline_jump,
+                    timestamp,
+                )
+                self.timeline_strip.append(button)
+        finally:
+            cap.release()
+
+    def _timeline_jump(self, button, timestamp: float) -> None:
+        self.time_scale.set_value(timestamp)
+        self._show_frame()
 
     def _message(self, text: str) -> None:
         self.status.set_text(text)

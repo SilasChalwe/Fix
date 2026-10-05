@@ -21,6 +21,18 @@ The current build provides visual watermark removal, watermark overlay/replaceme
 - Restore source cover artwork, metadata, chapters and compatible attachments after localized watermark editing.
 - Process media locally.
 
+## Platform Support
+
+FIX uses one shared codebase.
+
+- **Linux:** currently verified desktop runtime.
+- **Windows:** contributors are welcome for platform-neutral work; full desktop runtime/packaging support is planned under M5.
+- **macOS:** contributors are welcome for platform-neutral work; full desktop runtime/packaging support is planned under M5.
+
+Operating-system support is infrastructure/packaging work, not a media plugin. Do not create Windows/macOS copies of the media engine or plugin architecture.
+
+See [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md) for the current support policy.
+
 ## Architecture Contract
 
 The repository structure is defined. Contributors must not invent a second project structure.
@@ -166,7 +178,7 @@ Watermark removal and cover replacement produce separate output files by default
 
 ## Running
 
-The current Linux workflow uses the system Python installation.
+The currently verified desktop workflow is Linux and uses the system Python installation.
 
 ```bash
 chmod +x run.sh
@@ -178,6 +190,8 @@ Or:
 ```bash
 /usr/bin/python3 app.py
 ```
+
+Windows/macOS contributors should follow [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md) for platform-neutral contribution guidance. Do not assume the Linux launcher represents full cross-platform runtime support.
 
 ## Dependency Check
 
@@ -205,11 +219,12 @@ The application does not silently download dependencies at startup.
 3. Shared infrastructure belongs in `core/` or `media/`.
 4. GTK presentation belongs in `ui/`.
 5. Do not create another selection-state system.
-6. Do not duplicate the FFmpeg/FFprobe engine inside plugins.
-7. Do not commit client media, credentials, private keys, tokens, or confidential assets.
-8. Add tests for new processing behavior.
-9. Keep changes limited to the assigned workstream.
-10. Update documentation when a plugin contract changes.
+6. Do not duplicate the FFmpeg/FFprobe engine inside plugins or per operating system.
+7. Keep platform-specific code at the launch/setup/packaging/platform-integration boundary where practical.
+8. Do not commit client media, credentials, private keys, tokens, or confidential assets.
+9. Add tests for new processing behavior.
+10. Keep changes limited to the assigned workstream.
+11. Update documentation when a plugin or platform-support contract changes.
 
 ## Contributor Roadmap
 

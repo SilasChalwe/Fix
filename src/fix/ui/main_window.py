@@ -20,7 +20,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, application):
         super().__init__(application=application)
         self.set_title("FIX — Watermark & Video Asset Toolkit")
-        self.set_default_size(1400, 860)
+        self.set_default_size(1500, 920)
         self._install_css()
 
         self.registry = build_registry()
@@ -38,9 +38,11 @@ class MainWindow(Gtk.ApplicationWindow):
 
         header = Gtk.HeaderBar()
         header.add_css_class("app-header")
+        header.set_show_title_buttons(True)
+        header.set_title_widget(Gtk.Box())
         title = Gtk.Label(label="🎬  FIX — Watermark & Video Asset Toolkit")
         title.add_css_class("app-title")
-        header.set_title_widget(title)
+        header.pack_start(title)
         self.set_titlebar(header)
 
         root = Gtk.Box(
@@ -81,7 +83,7 @@ class MainWindow(Gtk.ApplicationWindow):
             orientation=Gtk.Orientation.HORIZONTAL,
         )
         workspace.set_vexpand(True)
-        workspace.set_position(860)
+        workspace.set_position(900)
         workspace.set_resize_start_child(True)
         workspace.set_shrink_start_child(True)
         workspace.set_resize_end_child(False)
@@ -144,13 +146,38 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         transport.append(self.time_scale)
 
+        volume_icon = Gtk.Label(label="🔊")
+        volume_icon.add_css_class("transport-icon")
+        transport.append(volume_icon)
+
+        volume = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL,
+            0.0,
+            1.0,
+            0.05,
+        )
+        volume.set_value(0.55)
+        volume.set_draw_value(False)
+        volume.set_size_request(110, -1)
+        volume.set_sensitive(False)
+        volume.set_tooltip_text(
+            "Audio playback is not part of the frame-preview engine."
+        )
+        transport.append(volume)
+
+        fullscreen_button = Gtk.Button(label="⛶")
+        fullscreen_button.add_css_class("round-control")
+        fullscreen_button.set_tooltip_text("Toggle fullscreen")
+        fullscreen_button.connect("clicked", self._toggle_fullscreen)
+        transport.append(fullscreen_button)
+
         workspace.set_start_child(left)
 
         sidebar = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL,
             spacing=0,
         )
-        sidebar.set_size_request(420, -1)
+        sidebar.set_size_request(500, -1)
         sidebar.add_css_class("sidebar")
         sidebar.set_margin_start(6)
         sidebar.set_margin_end(18)
@@ -203,23 +230,53 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         timeline.append(timeline_header)
 
-        timeline_title = Gtk.Label(label="◷  Timeline")
-        timeline_title.set_xalign(0)
-        timeline_title.set_hexpand(True)
-        timeline_title.add_css_class("section-title")
-        timeline_header.append(timeline_title)
+        timeline_clock = Gtk.Label(label="◷")
+        timeline_clock.add_css_class("section-title")
+        timeline_header.append(timeline_clock)
 
         frame_button = Gtk.Button(label="Show Frame")
         frame_button.connect("clicked", self._show_frame)
         timeline_header.append(frame_button)
 
-        timeline_scroll = Gtk.ScrolledWindow()
-        timeline_scroll.set_policy(
+        self.timeline_time_entry = Gtk.Entry()
+        self.timeline_time_entry.set_width_chars(11)
+        self.timeline_time_entry.set_text("00:00:00.0")
+        self.timeline_time_entry.set_tooltip_text(
+            "Enter time as HH:MM:SS.s and press Enter"
+        )
+        self.timeline_time_entry.connect(
+            "activate",
+            self._timeline_time_entered,
+        )
+        timeline_header.append(self.timeline_time_entry)
+
+        timeline_spacer = Gtk.Box()
+        timeline_spacer.set_hexpand(True)
+        timeline_header.append(timeline_spacer)
+
+        timeline_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=6,
+        )
+        timeline.append(timeline_row)
+
+        prev_button = Gtk.Button(label="‹")
+        prev_button.add_css_class("timeline-arrow")
+        prev_button.connect(
+            "clicked",
+            self._scroll_timeline,
+            -1,
+        )
+        timeline_row.append(prev_button)
+
+        self.timeline_scroll = Gtk.ScrolledWindow()
+        self.timeline_scroll.set_policy(
             Gtk.PolicyType.AUTOMATIC,
             Gtk.PolicyType.NEVER,
         )
-        timeline_scroll.set_min_content_height(82)
-        timeline.append(timeline_scroll)
+        self.timeline_scroll.set_min_content_height(82)
+        self.timeline_scroll.set_hexpand(True)
+        timeline_row.append(self.timeline_scroll)
 
         self.timeline_strip = Gtk.Box(
             orientation=Gtk.Orientation.HORIZONTAL,
@@ -229,7 +286,16 @@ class MainWindow(Gtk.ApplicationWindow):
         self.timeline_strip.set_margin_bottom(2)
         self.timeline_strip.set_margin_start(2)
         self.timeline_strip.set_margin_end(2)
-        timeline_scroll.set_child(self.timeline_strip)
+        self.timeline_scroll.set_child(self.timeline_strip)
+
+        next_button = Gtk.Button(label="›")
+        next_button.add_css_class("timeline-arrow")
+        next_button.connect(
+            "clicked",
+            self._scroll_timeline,
+            1,
+        )
+        timeline_row.append(next_button)
 
         placeholder = Gtk.Label(
             label="Open a video to build the timeline preview"
@@ -254,15 +320,37 @@ class MainWindow(Gtk.ApplicationWindow):
         status_bar.set_margin_bottom(12)
         root.append(status_bar)
 
-        self.status = Gtk.Label(label="●  Ready.")
+        ready_icon = Gtk.Label(label="●")
+        ready_icon.add_css_class("ready-icon")
+        status_bar.append(ready_icon)
+
+        self.status = Gtk.Label(label="Ready — no video loaded")
         self.status.set_xalign(0)
         self.status.set_hexpand(True)
         self.status.add_css_class("status-text")
         status_bar.append(self.status)
 
-        self.status_meta = Gtk.Label(label="No video loaded")
-        self.status_meta.add_css_class("muted")
+        self.status_meta = Gtk.Label(label="")
+        self.status_meta.set_visible(False)
         status_bar.append(self.status_meta)
+
+        folder_button = Gtk.Button(label="▱")
+        folder_button.add_css_class("status-action")
+        folder_button.set_tooltip_text("Choose output location")
+        folder_button.connect("clicked", self._choose_current_output)
+        status_bar.append(folder_button)
+
+        save_button = Gtk.Button(label="▣")
+        save_button.add_css_class("status-action")
+        save_button.set_tooltip_text("Run the selected operation")
+        save_button.connect("clicked", self._run_current_operation)
+        status_bar.append(save_button)
+
+        settings_button = Gtk.Button(label="⚙")
+        settings_button.add_css_class("status-action")
+        settings_button.set_tooltip_text("Current operation settings")
+        settings_button.connect("clicked", self._current_settings)
+        status_bar.append(settings_button)
 
     def _install_css(self) -> None:
         css = b"""

@@ -89,6 +89,7 @@ class MainWindow(Gtk.ApplicationWindow):
         )
 
         self.canvas = VideoCanvas(self._selection_changed)
+        self.canvas.set_vexpand(True)
         root.append(self.canvas)
 
         self.stack = Gtk.Stack()
@@ -103,7 +104,16 @@ class MainWindow(Gtk.ApplicationWindow):
         switcher = Gtk.StackSwitcher()
         switcher.set_stack(self.stack)
         root.append(switcher)
-        root.append(self.stack)
+
+        controls_scroll = Gtk.ScrolledWindow()
+        controls_scroll.set_policy(
+            Gtk.PolicyType.NEVER,
+            Gtk.PolicyType.AUTOMATIC,
+        )
+        controls_scroll.set_propagate_natural_height(True)
+        controls_scroll.set_max_content_height(240)
+        controls_scroll.set_child(self.stack)
+        root.append(controls_scroll)
 
         self._build_remove_tab()
         self._build_cover_tab()

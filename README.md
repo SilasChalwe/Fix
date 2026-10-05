@@ -249,4 +249,4 @@ Contributors may work on:
 
 ## License
 
-No open-source license has been selected yet. `LICENSE.txt` records the current status.
+FIX is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt) for the full license text.

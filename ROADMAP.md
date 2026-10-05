@@ -19,6 +19,18 @@ The repository already contains:
 
 The active Trim contribution is being reviewed separately in PR #1 and is not considered implemented on `main` yet.
 
+## Platform model
+
+FIX remains one shared codebase.
+
+- Linux is the currently verified desktop runtime.
+- Windows and macOS contributors are welcome now for platform-neutral work.
+- Full Windows/macOS desktop support is planned for M5.
+- Operating-system support is not implemented as a media plugin.
+- Platform-specific code should stay at the launch/setup/packaging/platform-integration boundary where practical.
+
+See [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
+
 ## Phase gate
 
 Development proceeds in order:
@@ -38,9 +50,10 @@ Work items:
 - #11 — Add real FFmpeg integration tests for current media operations
 - #12 — Prove source integrity and rollback for in-place watermark overlay
 - #13 — Strengthen output validation for processed media
-- #14 — Expand contributor workflow and issue-claiming guide
+- #14 — Expand contributor workflow and issue-claiming guide **completed**
+- #16 — Add Windows/macOS contributor setup and platform-neutral test workflow
 
-M1 closes only after independent tests can exercise real media behavior and the current operations are proven safe.
+M1 closes only after independent tests can exercise real media behavior, the current operations are proven safe, and contributors on Windows/macOS have a clear platform-neutral workflow.
 
 ## M2 — Trim Feature Completion — BLOCKED
 
@@ -60,11 +73,20 @@ Tracker: #7
 
 This phase proves supported containers/codecs/streams with a maintained compatibility matrix and avoids unnecessary re-encoding where practical.
 
-## M5 — Packaging & Release 1.0 — BLOCKED
+## M5 — Cross-Platform Packaging & Release 1.0 — BLOCKED
 
 Tracker: #8
 
-This phase covers Ubuntu-focused packaging, dependency diagnostics, versioning, release notes, installation documentation, and final regression validation.
+This phase turns the validated shared FIX codebase into supported desktop releases for Linux, Windows and macOS.
+
+Planned work:
+
+- #17 — Windows development, runtime and packaging support
+- #18 — macOS development, runtime and packaging support
+- #19 — Linux/Windows/macOS validation matrix
+- #20 — Cross-platform 1.0 release artifacts and installation docs
+
+Windows/macOS desktop support is not considered complete until its runtime, dependencies, media behavior and release artifact are independently validated.
 
 ## Contributor rule
 
@@ -77,5 +99,6 @@ Before starting work:
 5. Follow the architecture contract in `README.md` and `docs/ARCHITECTURE.md`.
 6. Add tests for changed behavior.
 7. Do not commit client/private media, credentials, tokens, or confidential assets.
+8. If working from Windows or macOS during an earlier milestone, keep the contribution platform-neutral unless the issue explicitly authorizes platform integration work.
 
 A contributor's local test report is useful, but merge approval requires independent maintainer/CI validation.

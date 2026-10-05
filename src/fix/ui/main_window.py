@@ -592,7 +592,7 @@ class MainWindow(Gtk.ApplicationWindow):
         title.set_hexpand(True)
         header.append(title)
 
-        clear_button = Gtk.Button(label="Clear All")
+        clear_button = Gtk.Button(label="🗑  Clear All")
         clear_button.add_css_class("danger-soft")
         clear_button.connect("clicked", self._clear_selections)
         header.append(clear_button)
@@ -607,43 +607,102 @@ class MainWindow(Gtk.ApplicationWindow):
         selections.append(help_text)
 
         selection_chip = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL,
-            spacing=3,
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=12,
         )
         selection_chip.add_css_class("selection-chip")
         selections.append(selection_chip)
 
+        self.selection_preview = Gtk.Image()
+        self.selection_preview.set_size_request(120, 68)
+        self.selection_preview.add_css_class("selection-preview")
+        selection_chip.append(self.selection_preview)
+
+        selection_text = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=4,
+        )
+        selection_text.set_hexpand(True)
+        selection_chip.append(selection_text)
+
         self.selection_summary = Gtk.Label(label="No selections yet")
         self.selection_summary.set_xalign(0)
         self.selection_summary.add_css_class("section-title")
-        selection_chip.append(self.selection_summary)
+        selection_text.append(self.selection_summary)
 
         self.selection_coords = Gtk.Label(
             label="Draw directly on the video preview."
         )
         self.selection_coords.set_xalign(0)
         self.selection_coords.add_css_class("muted")
-        selection_chip.append(self.selection_coords)
+        selection_text.append(self.selection_coords)
 
-        output = self._card()
-        output.append(self._section_title("Output"))
-        choose = Gtk.Button(label="Choose Save Location")
-        choose.connect("clicked", self._choose_remove_output)
-        output.append(choose)
+        delete_one = Gtk.Button(label="🗑")
+        delete_one.add_css_class("selection-delete")
+        delete_one.set_tooltip_text("Remove the most recent selection")
+        delete_one.connect("clicked", self._remove_last_selection)
+        selection_chip.append(delete_one)
 
-        self.remove_output_label = Gtk.Label(label="Automatic")
+        preview_card = self._card()
+        preview_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=10,
+        )
+        preview_card.append(preview_row)
+
+        preview_label = Gtk.Label(label="◉  Preview Mode")
+        preview_label.set_xalign(0)
+        preview_label.set_hexpand(True)
+        preview_row.append(preview_label)
+
+        self.preview_mode = Gtk.DropDown.new_from_strings(
+            ["Original"]
+        )
+        preview_row.append(self.preview_mode)
+
+        processing_card = self._card()
+        processing_label = Gtk.Label(label="⌁  Inpainting / Processing")
+        processing_label.set_xalign(0)
+        processing_label.add_css_class("section-title")
+        processing_card.append(processing_label)
+
+        processing_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8,
+        )
+        processing_card.append(processing_row)
+
+        self.processing_mode = Gtk.DropDown.new_from_strings(
+            ["Auto (Recommended)"]
+        )
+        self.processing_mode.set_hexpand(True)
+        processing_row.append(self.processing_mode)
+
+        settings_button = Gtk.Button(label="⚙")
+        settings_button.set_tooltip_text("Choose save location")
+        settings_button.connect("clicked", self._choose_remove_output)
+        processing_row.append(settings_button)
+
+        self.remove_output_label = Gtk.Label(label="Automatic output location")
         self.remove_output_label.set_xalign(0)
-        self.remove_output_label.set_wrap(True)
+        self.remove_output_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
         self.remove_output_label.add_css_class("muted")
-        output.append(self.remove_output_label)
+        processing_card.append(self.remove_output_label)
 
         action = Gtk.Button(label="▶  Remove Watermark")
         action.add_css_class("primary")
+        action.add_css_class("hero-action")
         action.connect("clicked", self._start_remove)
-        output.append(action)
 
         page.append(selections)
-        page.append(output)
+        page.append(preview_card)
+        page.append(processing_card)
+        page.append(action)
+
+        action.set_margin_top(10)
+        action.set_margin_bottom(12)
+        action.set_margin_start(10)
+        action.set_margin_end(10)
 
         self.stack.add_titled(
             page,

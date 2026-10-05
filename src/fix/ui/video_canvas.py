@@ -13,8 +13,10 @@ class VideoCanvas(Gtk.DrawingArea):
         super().__init__()
         self.set_hexpand(True)
         self.set_vexpand(True)
-        self.set_content_width(900)
-        self.set_content_height(500)
+        # Keep a useful initial canvas size without forcing the application
+        # window to retain a large minimum width or height.
+        self.set_content_width(320)
+        self.set_content_height(180)
 
         self.frame_pixbuf: GdkPixbuf.Pixbuf | None = None
         self.frame_width = 0

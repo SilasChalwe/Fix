@@ -82,6 +82,7 @@ class MainWindow(Gtk.ApplicationWindow):
         workspace = Gtk.Paned(
             orientation=Gtk.Orientation.HORIZONTAL,
         )
+        workspace.add_css_class("workspace-split")
         workspace.set_vexpand(True)
         workspace.set_position(900)
         workspace.set_resize_start_child(True)
@@ -427,6 +428,11 @@ class MainWindow(Gtk.ApplicationWindow):
             padding: 0;
         }
 
+        .workspace-split > separator {
+            background: transparent;
+            min-width: 14px;
+        }
+
         .transport {
             background: #0e141e;
             border-top: 1px solid #222b39;
@@ -489,6 +495,49 @@ class MainWindow(Gtk.ApplicationWindow):
             padding: 12px;
         }
 
+        .selection-preview {
+            background: #e7e7e9;
+            border-radius: 9px;
+            padding: 5px;
+        }
+
+        .selection-delete {
+            background: transparent;
+            border: 0;
+            color: #ffffff;
+            padding: 6px;
+        }
+
+        .hero-action {
+            min-height: 42px;
+            font-size: 15px;
+        }
+
+        .ready-icon {
+            color: #53d59a;
+            font-size: 20px;
+        }
+
+        .status-action {
+            background: transparent;
+            border: 0;
+            font-size: 18px;
+            min-width: 38px;
+            padding: 6px;
+        }
+
+        .timeline-arrow {
+            min-width: 34px;
+            min-height: 74px;
+            font-size: 26px;
+            padding: 0;
+        }
+
+        .transport-icon {
+            color: #eef2f8;
+            font-size: 17px;
+        }
+
         .timeline-card {
             padding: 12px;
         }
@@ -540,11 +589,16 @@ class MainWindow(Gtk.ApplicationWindow):
             border-radius: 999px;
         }
 
-        spinbutton, dropdown {
+        spinbutton, dropdown, entry {
             background: #171e2a;
             color: #f6f7fb;
             border: 1px solid #2a3342;
             border-radius: 9px;
+        }
+
+        entry {
+            padding: 8px 10px;
+            font-variant-numeric: tabular-nums;
         }
         """
         provider = Gtk.CssProvider()
@@ -683,11 +737,8 @@ class MainWindow(Gtk.ApplicationWindow):
         settings_button.connect("clicked", self._choose_remove_output)
         processing_row.append(settings_button)
 
-        self.remove_output_label = Gtk.Label(label="Automatic output location")
-        self.remove_output_label.set_xalign(0)
-        self.remove_output_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-        self.remove_output_label.add_css_class("muted")
-        processing_card.append(self.remove_output_label)
+        self.remove_output_label = Gtk.Label(label="Automatic")
+        self.remove_output_label.set_visible(False)
 
         action = Gtk.Button(label="▶  Remove Watermark")
         action.add_css_class("primary")
@@ -898,7 +949,7 @@ class MainWindow(Gtk.ApplicationWindow):
             self.selection_preview.clear()
 
     def _toggle_fullscreen(self, button=None) -> None:
-        if self.is_fullscreen():
+        if bool(self.get_property("fullscreened")):
             self.unfullscreen()
         else:
             self.fullscreen()

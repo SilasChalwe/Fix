@@ -160,12 +160,12 @@ class VideoCanvas(Gtk.DrawingArea):
                     cr.paint()
                     cr.restore()
 
-            cr.set_source_rgba(1.0, 0.78, 0.08, 1.0)
+            cr.set_source_rgba(1.0, 0.31, 0.60, 1.0)
             cr.set_line_width(2.5)
             cr.rectangle(sx, sy, sw, sh)
             cr.stroke()
 
-            cr.set_source_rgba(0.05, 0.05, 0.05, 0.82)
+            cr.set_source_rgba(0.12, 0.04, 0.09, 0.88)
             cr.rectangle(sx, max(self.offset_y, sy - 25), 110, 24)
             cr.fill()
 
@@ -186,10 +186,10 @@ class VideoCanvas(Gtk.DrawingArea):
             rw = abs(x2 - x1)
             rh = abs(y2 - y1)
 
-            cr.set_source_rgba(1.0, 0.78, 0.08, 0.18)
+            cr.set_source_rgba(1.0, 0.31, 0.60, 0.18)
             cr.rectangle(left, top, rw, rh)
             cr.fill_preserve()
-            cr.set_source_rgba(1.0, 0.78, 0.08, 1.0)
+            cr.set_source_rgba(1.0, 0.31, 0.60, 1.0)
             cr.set_line_width(2)
             cr.stroke()
 

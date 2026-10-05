@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-import cv2
 import gi
 gi.require_version("Gtk", "4.0")
 
@@ -11,6 +10,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango
 
 from fix.core.executor import OperationExecutor
 from fix.core.models import OperationContext, Selection
+from fix.media.ffmpeg import extract_frame_png
 from fix.media.ffprobe import probe_media
 from fix.plugins import build_registry
 from .video_canvas import VideoCanvas
@@ -684,52 +684,32 @@ class MainWindow(Gtk.ApplicationWindow):
         if not self.video_path or self.media is None:
             return
 
-        cap = cv2.VideoCapture(str(self.video_path))
         duration = max(float(self.media.duration), 0.1)
-        sample_count = 9
+        safe_end = max(0.0, duration - 0.10)
+        sample_count = 10
 
-        try:
-            for index in range(sample_count):
-                timestamp = duration * index / max(sample_count - 1, 1)
-                cap.set(
-                    cv2.CAP_PROP_POS_MSEC,
-                    timestamp * 1000.0,
-                )
-                ok, frame = cap.read()
-                if not ok or frame is None:
-                    continue
-
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                height, width = rgb.shape[:2]
-                data = GLib.Bytes.new(rgb.tobytes())
-                pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
-                    data,
-                    GdkPixbuf.Colorspace.RGB,
-                    False,
-                    8,
-                    width,
-                    height,
-                    width * 3,
-                )
-                thumb = pixbuf.scale_simple(
-                    132,
-                    74,
-                    GdkPixbuf.InterpType.BILINEAR,
-                )
-
-                image = Gtk.Image.new_from_pixbuf(thumb)
-                button = Gtk.Button()
-                button.add_css_class("timeline-thumb")
-                button.set_child(image)
-                button.set_tooltip_text(self._fmt_time(timestamp))
-                button.connect(
-                    "clicked",
-                    self._timeline_jump,
+        for index in range(sample_count):
+            timestamp = safe_end * index / max(sample_count - 1, 1)
+            try:
+                thumb = self._frame_pixbuf_at(
                     timestamp,
+                    width=138,
+                    height=76,
                 )
-                self.timeline_strip.append(button)
-        finally:
-            cap.release()
+            except Exception:
+                continue
+
+            image = Gtk.Image.new_from_pixbuf(thumb)
+            button = Gtk.Button()
+            button.add_css_class("timeline-thumb")
+            button.set_child(image)
+            button.set_tooltip_text(self._fmt_time(timestamp))
+            button.connect(
+                "clicked",
+                self._timeline_jump,
+                timestamp,
+            )
+            self.timeline_strip.append(button)
 
     def _timeline_jump(self, button, timestamp: float) -> None:
         self.time_scale.set_value(timestamp)
@@ -846,37 +826,52 @@ class MainWindow(Gtk.ApplicationWindow):
             f"●  Ready — {path.name}"
         )
 
+    @staticmethod
+    def _pixbuf_from_png(data: bytes) -> GdkPixbuf.Pixbuf:
+        loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+        loader.write(data)
+        loader.close()
+        pixbuf = loader.get_pixbuf()
+        if pixbuf is None:
+            raise RuntimeError("Could not decode preview image.")
+        return pixbuf
+
+    def _frame_pixbuf_at(
+        self,
+        timestamp: float,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> GdkPixbuf.Pixbuf:
+        if not self.video_path or self.media is None:
+            raise RuntimeError("Open a video first.")
+
+        safe_end = max(0.0, self.media.duration - 0.05)
+        timestamp = min(max(0.0, float(timestamp)), safe_end)
+        data = extract_frame_png(
+            self.video_path,
+            timestamp,
+            width=width,
+            height=height,
+        )
+        return self._pixbuf_from_png(data)
+
     def _show_frame(self, button=None) -> None:
-        if not self.video_path:
+        if not self.video_path or self.media is None:
             self._message("Open a video first.")
             return
 
-        cap = cv2.VideoCapture(str(self.video_path))
-        cap.set(
-            cv2.CAP_PROP_POS_MSEC,
-            float(self.time_scale.get_value()) * 1000.0,
-        )
-        ok, frame = cap.read()
-        cap.release()
-
-        if not ok or frame is None:
-            self._message("Could not read the selected video frame.")
-            return
-
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        height, width = rgb.shape[:2]
-        rowstride = width * 3
-        data = GLib.Bytes.new(rgb.tobytes())
-        pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
-            data,
-            GdkPixbuf.Colorspace.RGB,
-            False,
-            8,
-            width,
-            height,
-            rowstride,
-        )
-        self.canvas.set_frame(pixbuf, width, height)
+        try:
+            timestamp = float(self.time_scale.get_value())
+            pixbuf = self._frame_pixbuf_at(timestamp)
+            self.canvas.set_frame(
+                pixbuf,
+                self.media.width,
+                self.media.height,
+            )
+            self._update_selection_preview()
+        except Exception as exc:
+            self._message(str(exc))
 
     def _choose_image(self, title, callback) -> None:
         dialog = Gtk.FileChooserNative.new(

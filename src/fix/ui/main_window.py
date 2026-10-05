@@ -33,6 +33,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.playing = False
         self.playback_source_id: int | None = None
         self.timeline_items: list[tuple[float, Gtk.Widget, Gtk.Widget]] = []
+        self.media_stream: Gtk.MediaFile | None = None
 
         self.cover_path: Path | None = None
         self.watermark_path: Path | None = None
@@ -1069,14 +1070,28 @@ class MainWindow(Gtk.ApplicationWindow):
         self.play_button.set_label("❚❚" if self.playing else "▶")
 
         if self.playing:
+            if self.media_stream is not None:
+                try:
+                    self.media_stream.seek(
+                        int(float(self.time_scale.get_value()) * 1_000_000)
+                    )
+                    self.media_stream.play()
+                except Exception:
+                    pass
             if self.playback_source_id is None:
                 self.playback_source_id = GLib.timeout_add(
-                    200,
+                    250,
                     self._playback_tick,
                 )
-        elif self.playback_source_id is not None:
-            GLib.source_remove(self.playback_source_id)
-            self.playback_source_id = None
+        else:
+            if self.media_stream is not None:
+                try:
+                    self.media_stream.pause()
+                except Exception:
+                    pass
+            if self.playback_source_id is not None:
+                GLib.source_remove(self.playback_source_id)
+                self.playback_source_id = None
 
     def _playback_tick(self) -> bool:
         if not self.playing or self.media is None:
@@ -1084,6 +1099,14 @@ class MainWindow(Gtk.ApplicationWindow):
             return False
 
         current = float(self.time_scale.get_value())
+        if self.media_stream is not None:
+            try:
+                stream_time = self.media_stream.get_timestamp()
+                if stream_time >= 0:
+                    current = stream_time / 1_000_000.0
+            except Exception:
+                pass
+
         end = max(0.0, self.media.duration - 0.05)
         if current >= end:
             self.playing = False
@@ -1091,7 +1114,9 @@ class MainWindow(Gtk.ApplicationWindow):
             self.playback_source_id = None
             return False
 
-        self.time_scale.set_value(min(end, current + 0.2))
+        if self.media_stream is None:
+            current = min(end, current + 0.25)
+        self.time_scale.set_value(min(end, current))
         try:
             self._show_frame()
         except Exception:
@@ -1102,11 +1127,14 @@ class MainWindow(Gtk.ApplicationWindow):
         return True
 
     def _volume_changed(self, scale) -> None:
-        # The current preview path is frame-based rather than an audio player.
-        # Keep the control state live and expose its value without pretending
-        # that it changes exported media.
-        value = int(float(scale.get_value()) * 100)
+        level = float(scale.get_value())
+        value = int(level * 100)
         scale.set_tooltip_text(f"Preview volume: {value}%")
+        if self.media_stream is not None:
+            try:
+                self.media_stream.set_volume(level)
+            except Exception:
+                pass
 
     def _timeline_time_entered(self, entry) -> None:
         raw = entry.get_text().strip()
@@ -1257,7 +1285,7 @@ class MainWindow(Gtk.ApplicationWindow):
             self._update_selection_preview()
             media_text = (
                 f" | Video: {self.media.width}×{self.media.height}"
-                f" | Duration: {self._fmt_time(self.media.duration)}"
+                f" | Duration: {self._fmt_time_full(self.media.duration)}"
                 if self.media else ""
             )
             self.status.set_text(
@@ -1271,7 +1299,7 @@ class MainWindow(Gtk.ApplicationWindow):
             self._update_selection_preview()
             media_text = (
                 f" | Video: {self.media.width}×{self.media.height}"
-                f" | Duration: {self._fmt_time(self.media.duration)}"
+                f" | Duration: {self._fmt_time_full(self.media.duration)}"
                 if self.media else ""
             )
             self.status.set_text(
@@ -1324,17 +1352,30 @@ class MainWindow(Gtk.ApplicationWindow):
         self.video_path = path
         self.video_name.set_text(path.name)
 
+        if self.media_stream is not None:
+            try:
+                self.media_stream.pause()
+            except Exception:
+                pass
+        try:
+            self.media_stream = Gtk.MediaFile.new_for_filename(str(path))
+            self.media_stream.set_volume(
+                float(self.volume_scale.get_value())
+            )
+        except Exception:
+            self.media_stream = None
+
         self.time_scale.set_range(0.0, max(self.media.duration, 0.1))
         self.time_scale.set_value(0.0)
 
         media_type = path.suffix.lstrip(".").upper() or "VIDEO"
         self.media_badge.set_text(
             f"{self.media.width} × {self.media.height}   |   "
-            f"{self._fmt_time(self.media.duration)}   |   {media_type}"
+            f"{self._fmt_time_full(self.media.duration)}   |   {media_type}"
         )
         self.status_meta.set_text(
             f"Video: {self.media.width}×{self.media.height}   |   "
-            f"Duration: {self._fmt_time(self.media.duration)}"
+            f"Duration: {self._fmt_time_full(self.media.duration)}"
         )
 
         self.remove_output = None
@@ -1347,7 +1388,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._rebuild_timeline()
         self.status.set_text(
             f"Ready | Video: {self.media.width}×{self.media.height}"
-            f" | Duration: {self._fmt_time(self.media.duration)}"
+            f" | Duration: {self._fmt_time_full(self.media.duration)}"
         )
 
     @staticmethod

@@ -30,6 +30,60 @@ def run_command(
         )
 
 
+
+def extract_frame_png(
+    source: Path,
+    timestamp: float,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+) -> bytes:
+    """Decode one video frame with FFmpeg and return it as PNG bytes.
+
+    FFmpeg is used here instead of OpenCV random seeking because long-GOP
+    HEVC/H.265 files can return corrupt or missing frames through OpenCV,
+    especially near the end of the file.
+    """
+    timestamp = max(0.0, float(timestamp))
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-ss", f"{timestamp:.6f}",
+        "-i", str(source),
+        "-map", "0:v:0",
+        "-frames:v", "1",
+    ]
+
+    if width and height:
+        cmd += [
+            "-vf",
+            (
+                f"scale={int(width)}:{int(height)}:"
+                "force_original_aspect_ratio=decrease,"
+                f"pad={int(width)}:{int(height)}:"
+                "(ow-iw)/2:(oh-ih)/2"
+            ),
+        ]
+
+    cmd += [
+        "-f", "image2pipe",
+        "-vcodec", "png",
+        "pipe:1",
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0 or not result.stdout:
+        error = result.stderr.decode("utf-8", errors="replace").strip()
+        raise MediaProcessingError(
+            error or "Could not decode the selected video frame."
+        )
+
+    return bytes(result.stdout)
+
 def encoding_args(media: MediaInfo) -> list[str]:
     codec = media.video_codec.lower()
 

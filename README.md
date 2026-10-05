@@ -250,6 +250,3 @@ Contributors may work on:
 ## License
 
 No open-source license has been selected yet. `LICENSE.txt` records the current status.
-
-If MIT is selected later, add it in a dedicated commit so the licensing change is explicit.
-# Fix

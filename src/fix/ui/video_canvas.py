@@ -37,6 +37,7 @@ class VideoCanvas(Gtk.DrawingArea):
         self.drag_current: tuple[float, float] | None = None
         self.move_start: Selection | None = None
         self.move_index: int | None = None
+        self.resize_handle: str | None = None
 
         self.on_selection_changed = on_selection_changed
 
@@ -112,6 +113,26 @@ class VideoCanvas(Gtk.DrawingArea):
             selection.height * self.display_scale,
         )
 
+    @staticmethod
+    def _handle_points(
+        sx: float,
+        sy: float,
+        sw: float,
+        sh: float,
+    ) -> dict[str, tuple[float, float]]:
+        cx = sx + sw / 2.0
+        cy = sy + sh / 2.0
+        return {
+            "nw": (sx, sy),
+            "n": (cx, sy),
+            "ne": (sx + sw, sy),
+            "e": (sx + sw, cy),
+            "se": (sx + sw, sy + sh),
+            "s": (cx, sy + sh),
+            "sw": (sx, sy + sh),
+            "w": (sx, cy),
+        }
+
     def _draw(self, area, cr, width, height):
         cr.set_source_rgba(0.06, 0.07, 0.08, 1.0)
         cr.rectangle(0, 0, width, height)
@@ -165,14 +186,13 @@ class VideoCanvas(Gtk.DrawingArea):
             cr.rectangle(sx, sy, sw, sh)
             cr.stroke()
 
-            cr.set_source_rgba(0.12, 0.04, 0.09, 0.88)
-            cr.rectangle(sx, max(self.offset_y, sy - 25), 110, 24)
-            cr.fill()
-
-            cr.set_source_rgba(1, 1, 1, 1)
-            cr.set_font_size(13)
-            cr.move_to(sx + 7, max(self.offset_y + 16, sy - 8))
-            cr.show_text(f"Selection {index + 1}")
+            for hx, hy in self._handle_points(sx, sy, sw, sh).values():
+                cr.set_source_rgba(1.0, 1.0, 1.0, 1.0)
+                cr.arc(hx, hy, 6.0, 0, 6.283185307179586)
+                cr.fill_preserve()
+                cr.set_source_rgba(1.0, 0.31, 0.60, 1.0)
+                cr.set_line_width(2.0)
+                cr.stroke()
 
         if (
             self.drag_kind == "new"
@@ -200,12 +220,29 @@ class VideoCanvas(Gtk.DrawingArea):
             self.drag_current = None
             self.move_start = None
             self.move_index = None
+            self.resize_handle = None
             return
 
         for index in range(len(self.selections) - 1, -1, -1):
             sx, sy, sw, sh = self._screen_rect(self.selections[index])
+            for handle, (hx, hy) in self._handle_points(
+                sx,
+                sy,
+                sw,
+                sh,
+            ).items():
+                if (x - hx) ** 2 + (y - hy) ** 2 <= 12 ** 2:
+                    self.drag_kind = "resize"
+                    self.resize_handle = handle
+                    self.drag_start = (x, y)
+                    self.drag_current = (x, y)
+                    self.move_start = self.selections[index]
+                    self.move_index = index
+                    return
+
             if sx <= x <= sx + sw and sy <= y <= sy + sh:
                 self.drag_kind = "move"
+                self.resize_handle = None
                 self.drag_start = (x, y)
                 self.drag_current = (x, y)
                 self.move_start = self.selections[index]
@@ -213,6 +250,7 @@ class VideoCanvas(Gtk.DrawingArea):
                 return
 
         self.drag_kind = "new"
+        self.resize_handle = None
         self.drag_start = (x, y)
         self.drag_current = (x, y)
         self.move_start = None
@@ -221,6 +259,53 @@ class VideoCanvas(Gtk.DrawingArea):
 
     def _drag_update(self, gesture, dx, dy):
         if self.drag_start is None:
+            return
+
+        if (
+            self.drag_kind == "resize"
+            and self.resize_handle is not None
+            and self.move_start is not None
+            and self.move_index is not None
+        ):
+            move_x = int(dx / self.display_scale)
+            move_y = int(dy / self.display_scale)
+
+            selection = self.move_start
+            left = selection.x
+            top = selection.y
+            right = selection.x + selection.width
+            bottom = selection.y + selection.height
+            handle = self.resize_handle
+
+            if "w" in handle:
+                left += move_x
+            if "e" in handle:
+                right += move_x
+            if "n" in handle:
+                top += move_y
+            if "s" in handle:
+                bottom += move_y
+
+            min_size = 2
+            left = max(0, min(left, right - min_size))
+            top = max(0, min(top, bottom - min_size))
+            right = min(
+                self.frame_width,
+                max(right, left + min_size),
+            )
+            bottom = min(
+                self.frame_height,
+                max(bottom, top + min_size),
+            )
+
+            resized = Selection(
+                int(left),
+                int(top),
+                int(right - left),
+                int(bottom - top),
+            )
+            self.selections[self.move_index] = resized
+            self.queue_draw()
             return
 
         if (
@@ -269,10 +354,11 @@ class VideoCanvas(Gtk.DrawingArea):
             return
 
         if (
-            self.drag_kind == "move"
+            self.drag_kind in {"move", "resize"}
             and self.move_index is not None
         ):
             self.drag_kind = None
+            self.resize_handle = None
             self.drag_start = None
             self.drag_current = None
             self.move_start = None

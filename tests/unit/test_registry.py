@@ -15,4 +15,5 @@ def test_builtin_plugins_are_registered():
         "remove_watermark",
         "watermark_overlay",
         "cover_art",
+        "trim",
     } <= ids

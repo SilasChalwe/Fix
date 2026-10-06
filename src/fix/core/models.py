@@ -41,6 +41,7 @@ class OperationContext:
     output: Path | None = None
     start_seconds: float = 0.0
     duration_seconds: float | None = None
+    end_seconds: float | None = None
     asset: Path | None = None
     options: dict[str, Any] = field(default_factory=dict)
 

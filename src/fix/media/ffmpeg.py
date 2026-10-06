@@ -178,6 +178,69 @@ def replace_cover(
     return output
 
 
+def trim_video(
+    source: Path,
+    output: Path,
+    start_seconds: float,
+    end_seconds: float,
+    media: MediaInfo,
+    progress: ProgressCallback,
+) -> Path:
+    """Trim accurately by copying only when the start is keyframe-aligned.
+
+    A keyframe-aligned start uses stream copy for a fast, exact cut. Other
+    starts re-encode only the video stream while copying audio, subtitles,
+    attachments, metadata, and chapters.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    common = [
+        "ffmpeg", "-y",
+        "-hide_banner", "-loglevel", "error",
+        "-i", str(source),
+        "-ss", f"{start_seconds:.6f}",
+        "-t", f"{end_seconds - start_seconds:.6f}",
+    ]
+
+    progress(0.03, "Checking keyframe alignment…")
+    keyframe_aligned = any(
+        abs(timestamp - start_seconds) <= 1e-6
+        for timestamp in keyframes(source)
+    )
+
+    if keyframe_aligned:
+        cmd = [
+            *common,
+            "-map", "0",
+            "-map_metadata", "0",
+            "-map_chapters", "0",
+            "-c", "copy",
+            str(output),
+        ]
+        run_command(cmd, progress, 0.10, "Copying keyframe-aligned streams…")
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-hide_banner", "-loglevel", "error",
+            "-fflags", "+genpts",
+            "-i", str(source),
+            "-ss", f"{start_seconds:.6f}",
+            "-t", f"{end_seconds - start_seconds:.6f}",
+            *encoding_args(media),
+            "-bf", "0",
+            "-c:a", "copy",
+            "-c:s", "copy",
+            "-c:t", "copy",
+            *_attached_picture_codecs(media),
+            "-use_editlist", "0",
+            str(output),
+        ]
+        run_command(cmd, progress, 0.20, "Re-encoding video for accuracy…")
+
+    progress(1.0, f"Saved: {output.name}")
+    return output
+
+
 def _keyframe_window(
     source: Path,
     duration: float,

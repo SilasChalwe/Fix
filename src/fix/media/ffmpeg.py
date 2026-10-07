@@ -186,60 +186,106 @@ def trim_video(
     media: MediaInfo,
     progress: ProgressCallback,
 ) -> Path:
-    """Trim accurately by copying only when the start is keyframe-aligned.
+    """Trim to the requested interval while preserving source media streams.
 
-    A keyframe-aligned start uses stream copy for a fast, exact cut. Other
-    starts re-encode only the video stream while copying audio, subtitles,
-    attachments, metadata, and chapters.
+    The primary video is always re-encoded so both keyframe-aligned and
+    non-keyframe starts follow the same accurate path. Audio and subtitles are
+    copied when possible. Static streams that cannot participate in the trim
+    timeline (attached pictures and container attachments) are restored from
+    the original source in a final remux.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
+    trim_duration = end_seconds - start_seconds
 
-    common = [
-        "ffmpeg", "-y",
-        "-hide_banner", "-loglevel", "error",
-        "-i", str(source),
-        "-ss", f"{start_seconds:.6f}",
-        "-t", f"{end_seconds - start_seconds:.6f}",
-    ]
+    if trim_duration <= 0:
+        raise MediaProcessingError(
+            "Trim end time must be greater than the start time."
+        )
 
-    progress(0.03, "Checking keyframe alignment…")
-    keyframe_aligned = any(
-        abs(timestamp - start_seconds) <= 1e-6
-        for timestamp in keyframes(source)
-    )
-
-    if keyframe_aligned:
-        cmd = [
-            *common,
-            "-map", "0",
-            "-map_metadata", "0",
-            "-map_chapters", "0",
-            "-c", "copy",
-            str(output),
-        ]
-        run_command(cmd, progress, 0.10, "Copying keyframe-aligned streams…")
-    else:
-        cmd = [
+    def trim_command(target: Path) -> list[str]:
+        return [
             "ffmpeg", "-y",
             "-hide_banner", "-loglevel", "error",
             "-fflags", "+genpts",
             "-i", str(source),
             "-ss", f"{start_seconds:.6f}",
-            "-t", f"{end_seconds - start_seconds:.6f}",
+            "-t", f"{trim_duration:.6f}",
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-map", "0:s?",
             *encoding_args(media),
             "-bf", "0",
             "-c:a", "copy",
             "-c:s", "copy",
-            "-c:t", "copy",
-            *_attached_picture_codecs(media),
+            "-map_metadata", "0",
+            "-map_chapters", "0",
+            "-shortest",
             "-use_editlist", "0",
+            str(target),
+        ]
+
+    needs_static_restore = bool(
+        media.attached_picture_streams
+        or media.attachment_streams
+    )
+
+    if not needs_static_restore:
+        run_command(
+            trim_command(output),
+            progress,
+            0.20,
+            "Re-encoding video for accurate trim…",
+        )
+        progress(1.0, f"Saved: {output.name}")
+        return output
+
+    suffix = output.suffix or source.suffix or ".mkv"
+    with tempfile.TemporaryDirectory(
+        prefix=".fix_trim_",
+        dir=str(output.parent),
+    ) as td_name:
+        core = Path(td_name) / f"trimmed{suffix}"
+
+        run_command(
+            trim_command(core),
+            progress,
+            0.18,
+            "Re-encoding video for accurate trim…",
+        )
+
+        restore_cmd = [
+            "ffmpeg", "-y",
+            "-hide_banner", "-loglevel", "error",
+            "-i", str(core),
+            "-i", str(source),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-map", "0:s?",
+        ]
+
+        for stream_index in media.attached_picture_streams:
+            restore_cmd += ["-map", f"1:{stream_index}"]
+
+        for stream_index in media.attachment_streams:
+            restore_cmd += ["-map", f"1:{stream_index}"]
+
+        restore_cmd += [
+            "-map_metadata", "1",
+            "-map_chapters", "0",
+            "-c", "copy",
+            *_attached_picture_codecs(media),
             str(output),
         ]
-        run_command(cmd, progress, 0.20, "Re-encoding video for accuracy…")
+
+        run_command(
+            restore_cmd,
+            progress,
+            0.82,
+            "Restoring cover, attachments, and metadata…",
+        )
 
     progress(1.0, f"Saved: {output.name}")
     return output
-
 
 def _keyframe_window(
     source: Path,

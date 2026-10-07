@@ -131,7 +131,68 @@ def test_trim_command_no_audio_filter_on_reencode_path(tmp_path):
     assert "-af" not in command
     assert command[command.index("-c:a") + 1] == "copy"
     assert "libx264" in command
+    assert "-shortest" in command
 
+
+
+def test_trim_restores_attached_picture_and_attachment_streams(tmp_path):
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "trimmed.mkv"
+    source.write_bytes(b"source")
+    media = MediaInfo(
+        path=source,
+        duration=10.0,
+        width=1280,
+        height=720,
+        fps=30.0,
+        video_codec="h264",
+        video_bitrate=1_000_000,
+        size_bytes=1000,
+        attached_picture_streams=(3,),
+        attachment_streams=(4,),
+    )
+    completed = subprocess.CompletedProcess(
+        args=["ffmpeg"],
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+
+    with patch(
+        "fix.media.ffmpeg.subprocess.run",
+        return_value=completed,
+    ) as mocked_run:
+        trim_video(
+            source=source,
+            output=output,
+            start_seconds=2.0,
+            end_seconds=8.0,
+            media=media,
+            progress=lambda fraction, label: None,
+        )
+
+    assert mocked_run.call_count == 2
+    trim_command = mocked_run.call_args_list[0].args[0]
+    restore_command = mocked_run.call_args_list[1].args[0]
+
+    assert "libx264" in trim_command
+    assert "-shortest" in trim_command
+    assert ["-map", "1:3"] == restore_command[
+        restore_command.index("1:3") - 1:
+        restore_command.index("1:3") + 1
+    ]
+    assert ["-map", "1:4"] == restore_command[
+        restore_command.index("1:4") - 1:
+        restore_command.index("1:4") + 1
+    ]
+    assert restore_command[
+        restore_command.index("-map_metadata") + 1
+    ] == "1"
+    assert restore_command[
+        restore_command.index("-map_chapters") + 1
+    ] == "0"
+    disposition_index = restore_command.index("-disposition:v:1")
+    assert restore_command[disposition_index + 1] == "attached_pic"
 
 def test_valid_trim_range_builds_new_output_plan(tmp_path):
     source = tmp_path / "source.mp4"

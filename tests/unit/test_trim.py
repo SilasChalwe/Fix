@@ -131,7 +131,7 @@ def test_trim_command_no_audio_filter_on_reencode_path(tmp_path):
     assert "-af" not in command
     assert command[command.index("-c:a") + 1] == "copy"
     assert "libx264" in command
-    assert "-shortest" in command
+    assert "-shortest" not in command
 
 
 
@@ -176,7 +176,7 @@ def test_trim_restores_attached_picture_and_attachment_streams(tmp_path):
     restore_command = mocked_run.call_args_list[1].args[0]
 
     assert "libx264" in trim_command
-    assert "-shortest" in trim_command
+    assert "-shortest" not in trim_command
     assert ["-map", "1:3"] == restore_command[
         restore_command.index("1:3") - 1:
         restore_command.index("1:3") + 1

@@ -219,7 +219,6 @@ def trim_video(
             "-c:s", "copy",
             "-map_metadata", "0",
             "-map_chapters", "0",
-            "-shortest",
             "-use_editlist", "0",
             str(target),
         ]

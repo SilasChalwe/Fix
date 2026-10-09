@@ -192,7 +192,7 @@ def test_trim_maps_additional_timed_video_streams(tmp_path):
     extra_index = command.index("0:2")
     assert command[extra_index - 1] == "-map"
     codec_index = command.index("-c:v")
-    assert command[codec_index + 1] == "copy"
+    assert command[codec_index + 1] == "libx264"
     assert "libx264" in command
 
 

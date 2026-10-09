@@ -41,6 +41,12 @@ def encoding_args(media: MediaInfo) -> list[str]:
 
     if codec in {"hevc", "h265"}:
         args = ["-c:v:0", "libx265", "-preset", "medium"]
+    elif codec == "vp9":
+        args = [
+            "-c:v:0", "libvpx-vp9",
+            "-deadline", "good",
+            "-cpu-used", "2",
+        ]
     else:
         args = ["-c:v:0", "libx264", "-preset", "medium"]
 
@@ -63,10 +69,15 @@ def _attached_picture_maps(media: MediaInfo) -> list[str]:
     return args
 
 
-def _attached_picture_codecs(media: MediaInfo) -> list[str]:
+def _attached_picture_codecs(
+    media: MediaInfo,
+    start_index: int = 1,
+) -> list[str]:
     args: list[str] = []
-    # Output video stream 0 is the processed main video.
-    for out_index, _ in enumerate(media.attached_picture_streams, start=1):
+    for out_index, _ in enumerate(
+        media.attached_picture_streams,
+        start=start_index,
+    ):
         args += [
             f"-c:v:{out_index}", "copy",
             f"-disposition:v:{out_index}", "attached_pic",
@@ -211,10 +222,16 @@ def trim_video(
             "-ss", f"{start_seconds:.6f}",
             "-t", f"{trim_duration:.6f}",
             "-map", "0:v:0",
+            *[
+                item
+                for stream_index in media.additional_video_streams
+                for item in ("-map", f"0:{stream_index}")
+            ],
             "-map", "0:a?",
             "-map", "0:s?",
+            "-c:v", "copy",
             *encoding_args(media),
-            "-bf", "0",
+            "-bf:v:0", "0",
             "-c:a", "copy",
             "-c:s", "copy",
             "-map_metadata", "0",
@@ -257,7 +274,7 @@ def trim_video(
             "-hide_banner", "-loglevel", "error",
             "-i", str(core),
             "-i", str(source),
-            "-map", "0:v:0",
+            "-map", "0:v?",
             "-map", "0:a?",
             "-map", "0:s?",
         ]
@@ -272,7 +289,10 @@ def trim_video(
             "-map_metadata", "1",
             "-map_chapters", "0",
             "-c", "copy",
-            *_attached_picture_codecs(media),
+            *_attached_picture_codecs(
+                media,
+                start_index=1 + len(media.additional_video_streams),
+            ),
             str(output),
         ]
 

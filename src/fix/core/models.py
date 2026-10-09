@@ -29,6 +29,7 @@ class MediaInfo:
     video_codec: str
     video_bitrate: int | None
     size_bytes: int
+    additional_video_streams: tuple[int, ...] = ()
     attached_picture_streams: tuple[int, ...] = ()
     attachment_streams: tuple[int, ...] = ()
 

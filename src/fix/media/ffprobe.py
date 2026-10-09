@@ -53,6 +53,7 @@ def probe_media(path: Path) -> MediaInfo:
 
     streams = data.get("streams", [])
     video_stream = None
+    additional_videos: list[int] = []
     attached_pictures: list[int] = []
     attachments: list[int] = []
 
@@ -69,8 +70,11 @@ def probe_media(path: Path) -> MediaInfo:
                 attached_pictures.append(int(index))
             continue
 
-        if codec_type == "video" and video_stream is None:
-            video_stream = stream
+        if codec_type == "video":
+            if video_stream is None:
+                video_stream = stream
+            elif index is not None:
+                additional_videos.append(int(index))
 
         if codec_type == "attachment" and index is not None:
             attachments.append(int(index))
@@ -107,6 +111,7 @@ def probe_media(path: Path) -> MediaInfo:
         video_codec=str(video_stream.get("codec_name") or ""),
         video_bitrate=bitrate,
         size_bytes=path.stat().st_size,
+        additional_video_streams=tuple(additional_videos),
         attached_picture_streams=tuple(attached_pictures),
         attachment_streams=tuple(attachments),
     )

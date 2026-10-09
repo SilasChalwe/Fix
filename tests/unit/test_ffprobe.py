@@ -28,6 +28,21 @@ def probe_payload():
                 "disposition": {"attached_pic": 0},
             },
             {"index": 1, "codec_type": "audio", "codec_name": "aac"},
+            {
+                "index": 2,
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 160,
+                "height": 120,
+                "disposition": {"attached_pic": 0},
+            },
+            {
+                "index": 3,
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "disposition": {"attached_pic": 1},
+            },
+            {"index": 4, "codec_type": "attachment", "codec_name": "ttf"},
         ],
         "format": {"duration": "4.5"},
     }
@@ -54,6 +69,9 @@ def test_probe_media_returns_float_duration_for_valid_media(tmp_path):
 
     assert isinstance(info.duration, float)
     assert info.duration == 4.5
+    assert info.additional_video_streams == (2,)
+    assert info.attached_picture_streams == (3,)
+    assert info.attachment_streams == (4,)
 
 
 def test_probe_media_raises_for_missing_file(tmp_path):

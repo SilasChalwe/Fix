@@ -45,6 +45,24 @@ def test_encoding_args_selects_libx265_for_hevc():
     assert "libx264" not in args
 
 
+def test_encoding_args_preserves_vp9_codec_family():
+    media = MediaInfo(
+        path=Path("source.webm"),
+        duration=10.0,
+        width=1280,
+        height=720,
+        fps=30.0,
+        video_codec="vp9",
+        video_bitrate=1_000_000,
+        size_bytes=1000,
+    )
+
+    args = encoding_args(media)
+
+    assert "libvpx-vp9" in args
+    assert "libx264" not in args
+
+
 def test_trim_command_uses_output_side_seeking(tmp_path):
     source = tmp_path / "source.mp4"
     output = tmp_path / "trimmed.mp4"
@@ -131,7 +149,114 @@ def test_trim_command_no_audio_filter_on_reencode_path(tmp_path):
     assert "-af" not in command
     assert command[command.index("-c:a") + 1] == "copy"
     assert "libx264" in command
+    assert "-shortest" not in command
 
+
+
+def test_trim_maps_additional_timed_video_streams(tmp_path):
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "trimmed.mkv"
+    source.write_bytes(b"source")
+    media = MediaInfo(
+        path=source,
+        duration=10.0,
+        width=1280,
+        height=720,
+        fps=30.0,
+        video_codec="h264",
+        video_bitrate=1_000_000,
+        size_bytes=1000,
+        additional_video_streams=(2,),
+    )
+    completed = subprocess.CompletedProcess(
+        args=["ffmpeg"],
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+
+    with patch(
+        "fix.media.ffmpeg.subprocess.run",
+        return_value=completed,
+    ) as mocked_run:
+        trim_video(
+            source=source,
+            output=output,
+            start_seconds=2.0,
+            end_seconds=8.0,
+            media=media,
+            progress=lambda fraction, label: None,
+        )
+
+    command = mocked_run.call_args.args[0]
+    extra_index = command.index("0:2")
+    assert command[extra_index - 1] == "-map"
+    codec_index = command.index("-c:v")
+    assert command[codec_index + 1] == "libx264"
+    assert "libx264" in command
+
+
+def test_trim_restores_attached_picture_and_attachment_streams(tmp_path):
+    source = tmp_path / "source.mkv"
+    output = tmp_path / "trimmed.mkv"
+    source.write_bytes(b"source")
+    media = MediaInfo(
+        path=source,
+        duration=10.0,
+        width=1280,
+        height=720,
+        fps=30.0,
+        video_codec="h264",
+        video_bitrate=1_000_000,
+        size_bytes=1000,
+        additional_video_streams=(2,),
+        attached_picture_streams=(3,),
+        attachment_streams=(4,),
+    )
+    completed = subprocess.CompletedProcess(
+        args=["ffmpeg"],
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+
+    with patch(
+        "fix.media.ffmpeg.subprocess.run",
+        return_value=completed,
+    ) as mocked_run:
+        trim_video(
+            source=source,
+            output=output,
+            start_seconds=2.0,
+            end_seconds=8.0,
+            media=media,
+            progress=lambda fraction, label: None,
+        )
+
+    assert mocked_run.call_count == 2
+    trim_command = mocked_run.call_args_list[0].args[0]
+    restore_command = mocked_run.call_args_list[1].args[0]
+
+    assert "libx264" in trim_command
+    assert "-shortest" not in trim_command
+    assert "0:2" in trim_command
+    assert restore_command[restore_command.index("-map") + 1] == "0:v?"
+    assert ["-map", "1:3"] == restore_command[
+        restore_command.index("1:3") - 1:
+        restore_command.index("1:3") + 1
+    ]
+    assert ["-map", "1:4"] == restore_command[
+        restore_command.index("1:4") - 1:
+        restore_command.index("1:4") + 1
+    ]
+    assert restore_command[
+        restore_command.index("-map_metadata") + 1
+    ] == "1"
+    assert restore_command[
+        restore_command.index("-map_chapters") + 1
+    ] == "0"
+    disposition_index = restore_command.index("-disposition:v:2")
+    assert restore_command[disposition_index + 1] == "attached_pic"
 
 def test_valid_trim_range_builds_new_output_plan(tmp_path):
     source = tmp_path / "source.mp4"

@@ -30,8 +30,18 @@ def run_command(
         )
 
 
+def _video_encoder_name(codec: str) -> str:
+    codec = codec.lower()
+    if codec in {"hevc", "h265"}:
+        return "libx265"
+    if codec == "vp9":
+        return "libvpx-vp9"
+    return "libx264"
+
+
 def encoding_args(media: MediaInfo) -> list[str]:
     codec = media.video_codec.lower()
+    encoder = _video_encoder_name(codec)
 
     bitrate = media.video_bitrate
     if not bitrate and media.duration > 0:
@@ -39,16 +49,16 @@ def encoding_args(media: MediaInfo) -> list[str]:
         total_bps = int((media.size_bytes * 8) / media.duration)
         bitrate = max(250_000, int(total_bps * 0.90))
 
-    if codec in {"hevc", "h265"}:
-        args = ["-c:v:0", "libx265", "-preset", "medium"]
-    elif codec == "vp9":
+    if encoder == "libx265":
+        args = ["-c:v:0", encoder, "-preset", "medium"]
+    elif encoder == "libvpx-vp9":
         args = [
-            "-c:v:0", "libvpx-vp9",
+            "-c:v:0", encoder,
             "-deadline", "good",
             "-cpu-used", "2",
         ]
     else:
-        args = ["-c:v:0", "libx264", "-preset", "medium"]
+        args = ["-c:v:0", encoder, "-preset", "medium"]
 
     if bitrate:
         args += [
@@ -229,7 +239,11 @@ def trim_video(
             ],
             "-map", "0:a?",
             "-map", "0:s?",
-            "-c:v", "copy",
+            *(
+                ["-c:v", _video_encoder_name(media.video_codec)]
+                if media.additional_video_streams
+                else []
+            ),
             *encoding_args(media),
             "-bf:v:0", "0",
             "-c:a", "copy",
